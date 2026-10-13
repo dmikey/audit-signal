@@ -4,6 +4,10 @@ A portable Go binary that runs [Slither](https://github.com/crytic/slither), rev
 
 No OpenAI API key is required. The Go binary has no third-party Go dependencies. Python/Slither and Copilot CLI remain external runtime dependencies; they are not embedded in the binary.
 
+## Example audit
+
+See the [VulnerableVault audit walkthrough](examples/README.md), with committed [Markdown](examples/reports/vulnerable-vault/report.md) and [JSON](examples/reports/vulnerable-vault/report.json) reports from a real Slither scan. It explains the High-severity reentrancy finding, a proposed fix and the validation still needed. The snapshot contains static analysis; Copilot review has not run.
+
 ## Build and run
 
 Requires Go 1.20+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and Node.js 22+ for Copilot CLI. CI produces binaries for Linux, macOS and Windows. Slither setup and live scanning are tested on Linux and macOS; Windows compiler availability depends on your toolchain.

@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "scope": "example/vault",
+  "target": "examples/VulnerableVault.sol",
+  "revision": "23ca3cbce01ecd02c888bc686009aa94daa1b52e",
+  "dirty": false,
+  "imported": false,
+  "created_at": "2026-10-13T20:24:33Z",
+  "slither_version": "0.11.6",
+  "reviewed": false,
+  "findings": [
+    {
+      "id": "7e0a159ec248c9c7b9ae24a6ed3e13f2e63d7f4c87ff23c89697740da5aef1a8",
+      "check": "reentrancy-eth",
+      "severity": "High",
+      "confidence": "Medium",
+      "description": "Reentrancy in VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17):\n\tExternal calls:\n\t- (ok,None) = msg.sender.call{value: amount}() (examples/VulnerableVault.sol#14)\n\tState variables written after the call(s):\n\t- balances[msg.sender] = 0 (examples/VulnerableVault.sol#16)\n\tVulnerableVault.balances (examples/VulnerableVault.sol#6) can be used in cross function reentrancies:\n\t- VulnerableVault.balances (examples/VulnerableVault.sol#6)\n\t- VulnerableVault.deposit() (examples/VulnerableVault.sol#8-10)\n\t- VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17)\n",
+      "locations": [
+        {
+          "file": "examples/VulnerableVault.sol",
+          "lines": [
+            12,
+            13,
+            14,
+            15,
+            16,
+            17
+          ]
+        },
+        {
+          "file": "examples/VulnerableVault.sol",
+          "lines": [
+            14
+          ]
+        },
+        {
+          "file": "examples/VulnerableVault.sol",
+          "lines": [
+            16
+          ]
+        }
+      ],
+      "origin": "slither"
+    },
+    {
+      "id": "837afa4c26de785758112cebadfdb5ee411b54085c94bbcbb7030d9438668faa",
+      "check": "low-level-calls",
+      "severity": "Informational",
+      "confidence": "High",
+      "description": "Low level call in VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17):\n\t- (ok,None) = msg.sender.call{value: amount}() (examples/VulnerableVault.sol#14)\n",
+      "locations": [
+        {
+          "file": "examples/VulnerableVault.sol",
+          "lines": [
+            12,
+            13,
+            14,
+            15,
+            16,
+            17
+          ]
+        },
+        {
+          "file": "examples/VulnerableVault.sol",
+          "lines": [
+            14
+          ]
+        }
+      ],
+      "origin": "slither"
+    }
+  ],
+  "sources": {
+    "examples/VulnerableVault.sol": {
+      "sha256": "b688ae680123dbdfc1f68b4a2f793302386e78df82ef4b76c043831dc655a608",
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.28;\n\n// Intentionally vulnerable fixture. Never deploy.\ncontract VulnerableVault {\n    mapping(address =\u003e uint256) public balances;\n\n    function deposit() external payable {\n        balances[msg.sender] += msg.value;\n    }\n\n    function withdraw() external {\n        uint256 amount = balances[msg.sender];\n        (bool ok,) = msg.sender.call{value: amount}(\"\");\n        require(ok, \"transfer failed\");\n        balances[msg.sender] = 0;\n    }\n}\n"
+    }
+  }
+}

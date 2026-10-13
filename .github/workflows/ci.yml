@@ -27,6 +27,13 @@ jobs:
           assert any(x['check'] == 'reentrancy-eth' and x['severity'] == 'High' for x in r['findings']), r
           assert not r['reviewed'] and not r['imported']
           PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: example-vault-static-audit
+          path: |
+            reports/report.md
+            reports/report.json
+          retention-days: 7
   binaries:
     runs-on: ubuntu-latest
     strategy:
