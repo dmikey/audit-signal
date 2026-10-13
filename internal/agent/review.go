@@ -75,6 +75,15 @@ func reviewReport(ctx context.Context, r *Report, executable, model string) erro
 			cmd.Env = append(cmd.Env, k+"="+v)
 		}
 	}
+	if os.Getenv("COPILOT_GITHUB_TOKEN") == "" && os.Getenv("GH_TOKEN") == "" && os.Getenv("GITHUB_TOKEN") == "" {
+		// Resolve the local login before entering the isolated configuration.
+		// Capture credentials in memory; never persist them in reports or logs.
+		token, err := githubToken(ctx)
+		if err != nil {
+			return fmt.Errorf("AI review requires a Copilot-enabled token or an authenticated gh login")
+		}
+		cmd.Env = append(cmd.Env, "GH_TOKEN="+token)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

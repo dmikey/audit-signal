@@ -6,7 +6,7 @@ No OpenAI API key is required. The Go binary has no third-party Go dependencies.
 
 ## Example audit
 
-See the [VulnerableVault audit walkthrough](examples/README.md), with committed [Markdown](examples/reports/vulnerable-vault/report.md) and [JSON](examples/reports/vulnerable-vault/report.json) reports from a real Slither scan. It explains the High-severity reentrancy finding, a proposed fix and the validation still needed. See also the [executed penetration/risk report](examples/reports/vulnerable-vault-risk/report.md): four passing local EVM tests, including a reproduced drain and 256 fuzz cases. Copilot review has not run.
+See the [VulnerableVault audit walkthrough](examples/README.md), with committed [Markdown](examples/reports/vulnerable-vault/report.md) and [JSON](examples/reports/vulnerable-vault/report.json) reports from a real Slither scan. It explains the High-severity reentrancy finding, a proposed fix and the validation still needed. See also the [executed penetration/risk report](examples/reports/vulnerable-vault-risk/report.md): four passing local EVM tests, including a reproduced drain and 256 fuzz cases. A [live GPT-5.4 review](examples/reports/vulnerable-vault-ai/report.md) also completed successfully.
 
 ## Build and run
 
@@ -20,7 +20,7 @@ npm install -g @github/copilot@1.0.97
 
 Setup installs `slither-analyzer==0.11.6` and `solc-select==1.2.0` into `.slither-venv`, and downloads the requested compiler into `.slither-venv/.solc-select`. It does not change your global compiler selection. Python dependencies of those pinned packages are resolved by uv at install time. Choose the compiler your contracts require.
 
-Authenticate Copilot locally with `copilot login`, then supply a supported `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN` to the audit process. The reviewer uses isolated Copilot configuration, so it does not reuse local login files. A fine-grained PAT needs the **Copilot Requests** permission and Copilot access. Keep tokens in your environment or GitHub secrets; never commit them.
+For local use, run `gh auth login` with a GitHub account that has Copilot access. When no token environment variable is set, the agent captures the existing `gh` login in memory and supplies it to its isolated Copilot process. Alternatively, supply a supported `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`. A fine-grained PAT needs the **Copilot Requests** permission and Copilot access. The reviewer does not reuse local Copilot login/config files. Keep tokens in your environment or GitHub secrets; never commit them.
 
 ```sh
 ./bin/slither-agent audit \
@@ -113,4 +113,4 @@ make smoke   # installs real Slither/solc and audits an intentionally vulnerable
 make risk-smoke # requires forge; adds local exploit, remediation and fuzz tests
 ```
 
-Tests cover failed analysis, checkout-independent IDs, source disclosure boundaries, malformed AI review, public-destination protection, issue caps, issue deduplication, updates and closed-issue handling. CI verifies real `reentrancy-eth` detection and builds portable binaries. Live Copilot review requires the caller's Copilot policy/credentials and is not exercised by the public smoke workflow. The example vault is intentionally vulnerable and must never be deployed.
+Tests cover failed analysis, checkout-independent IDs, source disclosure boundaries, malformed AI review, public-destination protection, issue caps, issue deduplication, updates and closed-issue handling. CI verifies real `reentrancy-eth` detection and builds portable binaries. Live Copilot review has been verified locally with GPT-5.4 and the existing GitHub CLI login; the public smoke workflow exercises only static and dynamic tests. CI review still requires the caller's Copilot policy/credentials. The example vault is intentionally vulnerable and must never be deployed.

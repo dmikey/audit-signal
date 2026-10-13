@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = "0.2.0"
+const Version = "0.2.1"
 const SlitherVersion = "0.11.6"
 const SolcSelectVersion = "1.2.0"
 

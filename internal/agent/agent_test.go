@@ -202,6 +202,7 @@ assert '--disable-builtin-mcps' in sys.argv
 assert '--deny-tool=shell,write,read,url,memory' in sys.argv
 assert 'PRIVATE_BUILD_SECRET' not in os.environ
 assert os.environ['COPILOT_ALLOW_ALL']=='false'
+assert os.environ['GH_TOKEN']=='fake-review-token'
 assert os.getcwd()!=os.environ.get('ORIGINAL_DIR','')
 payload=json.loads(sys.stdin.read().split('UNTRUSTED AUDIT PAYLOAD:\n',1)[1])
 print(json.dumps({'reviews':[{'id':f['id'],'verdict':'needs-review','reasoning':'Vault.sol line 5','exploit_scenario':'callback before write','remediation':'checks effects interactions','validation':'write attacker test'} for f in payload['findings']]}))
@@ -210,6 +211,7 @@ print(json.dumps({'reviews':[{'id':f['id'],'verdict':'needs-review','reasoning':
 		t.Fatal(err)
 	}
 	t.Setenv("PRIVATE_BUILD_SECRET", "must-not-disclose")
+	t.Setenv("GH_TOKEN", "fake-review-token")
 	fs, _ := parseSlither(fixture("/one"), "scope", "/one")
 	r := Report{Scope: "scope", Findings: fs, Sources: map[string]Source{"Vault.sol": {Content: "contract Vault {}", SHA256: digest("contract Vault {}")}}}
 	if err := reviewReport(context.Background(), &r, script, "auto"); err != nil {
@@ -217,5 +219,16 @@ print(json.dumps({'reviews':[{'id':f['id'],'verdict':'needs-review','reasoning':
 	}
 	if !r.Reviewed || r.Findings[0].Review == nil {
 		t.Fatal("review not retained")
+	}
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("COPILOT_GITHUB_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	gh := filepath.Join(dir, "gh")
+	if err := os.WriteFile(gh, []byte("#!/bin/sh\nprintf 'fake-review-token\\n'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if err := reviewReport(context.Background(), &r, script, "auto"); err != nil {
+		t.Fatalf("existing gh login fallback failed: %v", err)
 	}
 }

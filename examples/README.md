@@ -2,7 +2,7 @@
 
 This example runs real Slither against [VulnerableVault.sol](VulnerableVault.sol), an intentionally vulnerable ETH vault. The committed [Markdown report](reports/vulnerable-vault/report.md) and [JSON report](reports/vulnerable-vault/report.json) show the output from Slither 0.11.6 and Solidity 0.8.28.
 
-**Execution status:** static analysis and local EVM exploit/risk tests completed; Copilot review and GitHub issue publication have not run. The walkthrough below explains the source code; it is not output from the Copilot review stage. Never deploy this fixture.
+**Execution status:** static analysis, local EVM exploit/risk tests and live GPT-5.4 Copilot review completed; GitHub issue publication has not run. The walkthrough below explains the source code; it is not output from the Copilot review stage. Never deploy this fixture.
 
 ## Findings
 
@@ -69,14 +69,16 @@ The [plan](risk/plan.json) links the reentrancy detector to four exact tests: re
 
 ## Add Copilot review
 
-With Copilot authentication configured as described in the [main README](../README.md):
+The [live AI-reviewed Markdown report](reports/vulnerable-vault-ai/report.md) and [JSON report](reports/vulnerable-vault-ai/report.json) record `model: gpt-5.4`, `reviewed: true`, and `imported: false`. The last value means Slither actually ran, rather than importing an external Slither result. GPT-5.4 assessed the reentrancy candidate as likely valid and the informational low-level-call observation as unlikely to be a separate vulnerability. Both findings remain in the report.
+
+With an authenticated `gh` login or Copilot token as described in the [main README](../README.md):
 
 ```sh
 npm install -g @github/copilot@1.0.97
 ./bin/slither-agent review \
   --report reports/example-vault-risk/report.json \
   --out reports/example-vault-reviewed \
-  --model auto
+  --model gpt-5.4
 ```
 
 This adds a verdict, reasoning, exploit scenario, remediation and validation steps for every detector finding. The committed static snapshot does not contain those fields. Keep example findings separate from real production issues; neither command above publishes issues.

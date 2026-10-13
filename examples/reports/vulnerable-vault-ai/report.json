@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "scope": "example/vault",
+  "target": "examples/VulnerableVault.sol",
+  "revision": "56129417d7f69eceaff249a294afa793f3f23354",
+  "dirty": false,
+  "imported": false,
+  "created_at": "2026-10-13T21:28:05Z",
+  "slither_version": "0.11.6",
+  "model": "gpt-5.4",
+  "reviewed": true,
+  "findings": [
+    {
+      "id": "7e0a159ec248c9c7b9ae24a6ed3e13f2e63d7f4c87ff23c89697740da5aef1a8",
+      "check": "reentrancy-eth",
+      "severity": "High",
+      "confidence": "Medium",
+      "description": "Reentrancy in VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17):\n\tExternal calls:\n\t- (ok,None) = msg.sender.call{value: amount}() (examples/VulnerableVault.sol#14)\n\tState variables written after the call(s):\n\t- balances[msg.sender] = 0 (examples/VulnerableVault.sol#16)\n\tVulnerableVault.balances (examples/VulnerableVault.sol#6) can be used in cross function reentrancies:\n\t- VulnerableVault.balances (examples/VulnerableVault.sol#6)\n\t- VulnerableVault.deposit() (examples/VulnerableVault.sol#8-10)\n\t- VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17)\n",
+      "locations": [
+        {
+          "file": "examples/VulnerableVault.sol",
+          "lines": [
+            12,
+            13,
+            14,
+            15,
+            16,
+            17
+          ]
+        },
+        {
+          "file": "examples/VulnerableVault.sol",
+          "lines": [
+            14
+          ]
+        },
+        {
+          "file": "examples/VulnerableVault.sol",
+          "lines": [
+            16
+          ]
+        }
+      ],
+      "origin": "slither",
+      "review": {
+        "id": "7e0a159ec248c9c7b9ae24a6ed3e13f2e63d7f4c87ff23c89697740da5aef1a8",
+        "verdict": "likely-valid",
+        "reasoning": "In examples/VulnerableVault.sol lines 12-16, withdraw() loads balances[msg.sender] into amount, performs an external ETH transfer to msg.sender via call at line 14, and only then clears balances[msg.sender] at line 16. There is no access control, reentrancy guard, or pre-call state update. That ordering leaves the credited balance unchanged during the external call, so a contract recipient can reenter withdraw() and receive the same amount multiple times before its balance is zeroed. The supplied risk evidence includes an executed exploit-reproduced test, test/VaultRisk.t.sol:VaultRiskTest::test_ReentrancyDrainsVictimFunds(), which passed and claims the attacker withdrew 6 ETH after depositing 1 ETH by consuming another user’s 5 ETH. The mitigation-holds and risk-property tests are useful for a separate fixed fixture only and do not remediate the audited VulnerableVault source.",
+        "exploit_scenario": "Preconditions: the vault holds ETH from other users and the attacker’s address is a contract with a payable fallback/receive function. Attack sequence: the attacker deposits a small amount, calls withdraw(), receives the first call{value: amount}, reenters withdraw() from the fallback before line 16 executes, and repeats until the vault’s pooled ETH is drained or gas runs out. Because balances[msg.sender] is not cleared until after the external call returns, each nested withdrawal observes the same credited amount.",
+        "remediation": "Apply checks-effects-interactions: set balances[msg.sender] = 0 before the external call, then send ETH; if the transfer fails, revert so the whole transaction rolls back. Optionally add a reentrancy guard (for example, nonReentrant) as defense in depth. Keep the failure path explicit so user credit is not silently lost.",
+        "validation": "Confirm on the vulnerable source by executing a reentrancy test that deposits victim funds and demonstrates repeated nested withdrawals. After the fix, run a separate negative test showing the same attacker can recover only its own credited amount, plus a failure-path test proving a rejected transfer reverts without burning credit."
+      }
+    },
+    {
+      "id": "837afa4c26de785758112cebadfdb5ee411b54085c94bbcbb7030d9438668faa",
+      "check": "low-level-calls",
+      "severity": "Informational",
+      "confidence": "High",
+      "description": "Low level call in VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17):\n\t- (ok,None) = msg.sender.call{value: amount}() (examples/VulnerableVault.sol#14)\n",
+      "locations": [
+        {
+          "file": "examples/VulnerableVault.sol",
+          "lines": [
+            12,
+            13,
+            14,
+            15,
+            16,
+            17
+          ]
+        },
+        {
+          "file": "examples/VulnerableVault.sol",
+          "lines": [
+            14
+          ]
+        }
+      ],
+      "origin": "slither",
+      "review": {
+        "id": "837afa4c26de785758112cebadfdb5ee411b54085c94bbcbb7030d9438668faa",
+        "verdict": "likely-false-positive",
+        "reasoning": "The source at examples/VulnerableVault.sol line 14 does use a low-level call to send ETH, so Slither accurately detected that pattern, but as a standalone security issue this is weakly supported. The call result is checked immediately with require(ok, \"transfer failed\") at line 15, so this is not an unchecked-call-return bug. In modern Solidity, using call for ETH transfers is common when the contract intentionally avoids the fixed stipend limitations of transfer/send. The meaningful security consequence here is the reentrancy surface created by calling out before state is updated, which is already captured by the separate reentrancy finding. The supplied risk section explicitly lists this finding ID as dynamically untested, so there is no exploit evidence for an independent low-level-call vulnerability.",
+        "exploit_scenario": "No distinct exploit is demonstrated solely from using call here. An attacker benefits only because the contract calls out before clearing state, enabling the reentrancy described in the other finding. If withdraw() updated state first or used a reentrancy guard, the same low-level call pattern would not by itself let an attacker drain funds.",
+        "remediation": "Do not treat low-level call usage alone as the bug. Fix the surrounding interaction pattern: clear state before the external transfer and/or add a reentrancy guard. If desired for clarity, keep call but wrap it in a helper or comment the intentional use; no separate replacement is required merely because it is a low-level call.",
+        "validation": "Manually review whether any additional unchecked return, arbitrary target, or malformed calldata risk exists beyond the already-confirmed reentrancy path. A focused test can confirm that, after reentrancy remediation, the contract still transfers ETH correctly to recipients that need more than 2300 gas while preserving safety."
+      }
+    }
+  ],
+  "sources": {
+    "examples/VulnerableVault.sol": {
+      "sha256": "b688ae680123dbdfc1f68b4a2f793302386e78df82ef4b76c043831dc655a608",
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.28;\n\n// Intentionally vulnerable fixture. Never deploy.\ncontract VulnerableVault {\n    mapping(address =\u003e uint256) public balances;\n\n    function deposit() external payable {\n        balances[msg.sender] += msg.value;\n    }\n\n    function withdraw() external {\n        uint256 amount = balances[msg.sender];\n        (bool ok,) = msg.sender.call{value: amount}(\"\");\n        require(ok, \"transfer failed\");\n        balances[msg.sender] = 0;\n    }\n}\n"
+    }
+  },
+  "risk": {
+    "status": "passed",
+    "environment": "local-evm",
+    "forge_version": "forge Version: 1.8.5\nCommit SHA: 51a52c59cffd940f76eddd0b4bb1791aa4b5ac7f\nBuild Timestamp: 2026-10-05T17:07:33.315474000Z (1791220053)\nBuild Profile: dist",
+    "started_at": "2026-10-13T21:28:07Z",
+    "plan_sha256": "b57a8e4c1b6f1e82182b01b214be0d561b958b2dc9e4b9b3effd5cb586ee272d",
+    "harness_hashes": {
+      "foundry.toml": "c0027d2ab48a71793886e20b3e2cbce33bd0b23e456b25963796b175bf2727a8",
+      "src/FixedVault.sol": "23c74aa241889840c3ca674f3e708fada2b57319d62b964378d5b2bc2a6547f2",
+      "test/VaultRisk.t.sol": "29e6a24d5340c9f7e383636de1209022c87799c9fc5ec00bd93f78cd3b0f816b"
+    },
+    "evidence": [
+      {
+        "check": "reentrancy-eth",
+        "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+        "test": "test_ReentrancyDrainsVictimFunds()",
+        "claim": "exploit-reproduced",
+        "description": "Attacker deposits 1 ETH and withdraws 6 ETH, consuming the victim's 5 ETH in the local EVM.",
+        "finding_ids": [
+          "7e0a159ec248c9c7b9ae24a6ed3e13f2e63d7f4c87ff23c89697740da5aef1a8"
+        ],
+        "status": "Success",
+        "kind": {
+          "Unit": {
+            "gas": 934786
+          }
+        }
+      },
+      {
+        "check": "reentrancy-eth",
+        "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+        "test": "test_FixedVaultBlocksSameAttack()",
+        "claim": "mitigation-holds",
+        "description": "The same callback attack receives only its own deposit in the checks-effects-interactions remediation fixture.",
+        "finding_ids": [
+          "7e0a159ec248c9c7b9ae24a6ed3e13f2e63d7f4c87ff23c89697740da5aef1a8"
+        ],
+        "status": "Success",
+        "kind": {
+          "Unit": {
+            "gas": 577885
+          }
+        }
+      },
+      {
+        "check": "reentrancy-eth",
+        "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+        "test": "test_FailedTransferRestoresCredit()",
+        "claim": "risk-property",
+        "description": "A rejecting recipient causes withdrawal to revert and retains its credit in the remediation fixture.",
+        "finding_ids": [
+          "7e0a159ec248c9c7b9ae24a6ed3e13f2e63d7f4c87ff23c89697740da5aef1a8"
+        ],
+        "status": "Success",
+        "kind": {
+          "Unit": {
+            "gas": 417128
+          }
+        }
+      },
+      {
+        "check": "reentrancy-eth",
+        "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+        "test": "testFuzz_FixedVaultPreservesVictimFunds(uint96,uint8)",
+        "claim": "risk-property",
+        "description": "Fuzz deposit amounts and callback counts; remediation fixture must preserve victim funds and credit.",
+        "finding_ids": [
+          "7e0a159ec248c9c7b9ae24a6ed3e13f2e63d7f4c87ff23c89697740da5aef1a8"
+        ],
+        "status": "Success",
+        "kind": {
+          "Fuzz": {
+            "first_case": {
+              "gas": 600226,
+              "stipend": 21476
+            },
+            "runs": 256,
+            "mean_gas": 578712,
+            "median_gas": 578702,
+            "failed_corpus_replays": 0
+          }
+        }
+      }
+    ],
+    "untested_finding_ids": [
+      "837afa4c26de785758112cebadfdb5ee411b54085c94bbcbb7030d9438668faa"
+    ],
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0
+  }
+}
