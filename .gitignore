@@ -1,0 +1,6 @@
+/bin/
+/.slither-venv/
+/.solc-select/
+/reports/
+/.env*
+*.test

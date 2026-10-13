@@ -1,0 +1,57 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - run: make test
+      - uses: astral-sh/setup-uv@v7
+      - run: make smoke
+      - name: Assert real Slither detected the intentionally vulnerable fixture
+        run: |
+          python3 - <<'PY'
+          import json
+          with open('reports/report.json') as f:
+              r = json.load(f)
+          assert any(x['check'] == 'reentrancy-eth' and x['severity'] == 'High' for x in r['findings']), r
+          assert not r['reviewed'] and not r['imported']
+          PY
+  binaries:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - {os: linux, arch: amd64, suffix: ''}
+          - {os: linux, arch: arm64, suffix: ''}
+          - {os: darwin, arch: arm64, suffix: ''}
+          - {os: darwin, arch: amd64, suffix: ''}
+          - {os: windows, arch: amd64, suffix: '.exe'}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - run: go build -trimpath -o bin/slither-agent-${GOOS}-${GOARCH}${SUFFIX} ./cmd/slither-agent
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          SUFFIX: ${{ matrix.suffix }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slither-agent-${{ matrix.os }}-${{ matrix.arch }}
+          path: bin/*

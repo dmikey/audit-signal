@@ -1,0 +1,89 @@
+# slither-agent
+
+A portable Go binary that runs [Slither](https://github.com/crytic/slither), reviews its findings with **GitHub Copilot**, and creates deduplicated GitHub security issues. Intended for private smart contract repositories, including Foundry, Hardhat and standalone Solidity/Vyper targets.
+
+No OpenAI API key is required. The Go binary has no third-party Go dependencies. Python/Slither and Copilot CLI remain external runtime dependencies; they are not embedded in the binary.
+
+## Build and run
+
+Requires Go 1.20+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and Node.js 22+ for Copilot CLI. CI produces binaries for Linux, macOS and Windows. Slither setup and live scanning are tested on Linux and macOS; Windows compiler availability depends on your toolchain.
+
+```sh
+go build -trimpath -o bin/slither-agent ./cmd/slither-agent
+./bin/slither-agent setup --solc-version 0.8.28
+npm install -g @github/copilot@1.0.97
+```
+
+Setup installs `slither-analyzer==0.11.6` and `solc-select==1.2.0` into `.slither-venv`, and downloads the requested compiler into `.slither-venv/.solc-select`. It does not change your global compiler selection. Python dependencies of those pinned packages are resolved by uv at install time. Choose the compiler your contracts require.
+
+Authenticate Copilot locally with `copilot login`, then supply a supported `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN` to the audit process. The reviewer uses isolated Copilot configuration, so it does not reuse local login files. A fine-grained PAT needs the **Copilot Requests** permission and Copilot access. Keep tokens in your environment or GitHub secrets; never commit them.
+
+```sh
+./bin/slither-agent audit \
+  --target /path/to/private-contracts \
+  --scope playmos/contracts \
+  --solc-version 0.8.28 --model auto
+
+# Review reports/report.md, then publish in the private contract repository:
+./bin/slither-agent publish \
+  --report reports/report.json --repo owner/private-contracts
+```
+
+Use the project root as `--target` when compilation depends on Foundry/Hardhat configuration. Install project dependencies first; use `slither.config.json` for Slither/framework settings. Use `--venv` or `--slither` for external tool installations. Scope is required and should remain stable across machines and revisions.
+
+`audit` defaults to AI review. Use `--ai none` for a Slither-only run. `review --report ...` adds AI review to an existing report. `audit --input slither.json --target ... --scope ...` imports Slither output and marks the report as imported. Imported output must correspond to the supplied source; the tool cannot independently establish its provenance.
+
+AI review consumes a bounded source bundle (48 KB by default). It excludes vendor/build directories (`node_modules`, `lib`, `out`, `cache`, `artifacts`) and ignores symlinks. An oversized bundle fails explicitly; narrow the target or raise `--max-source-bytes`. The serialized review payload is capped at 256 KB. Each Slither finding must receive exactly one valid review. Invalid, incomplete or failed AI output leaves the original Slither report available and prevents normal publication.
+
+## Use in GitHub CI/CD
+
+**GitHub Models retired July 30, 2026.** Use [Copilot CLI in Actions](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli-in-actions) instead of the old `models: read` inference API.
+
+For organization repositories, enable **Allow use of Copilot CLI billed to the organization** and grant `copilot-requests: write`. The workflow can then use `GITHUB_TOKEN`; no separate model key or PAT is required. AI credits are billed to the organization. For personal repositories or organizations without that policy, create a fine-grained PAT with **Copilot Requests** and store it as `COPILOT_TOKEN`. This uses the user's Copilot access and billing. See [GitHub's authentication options](https://docs.github.com/en/copilot/how-tos/copilot-cli/automate-copilot-cli/automate-with-actions).
+
+Add the following workflow **inside the private contract repository**. Pin the tool workflow and `agent-ref` to the same reviewed commit for production; the version tag below is a convenient starting point.
+
+```yaml
+name: Smart contract security audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  copilot-requests: write
+  issues: write
+jobs:
+  audit:
+    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.1.0
+    with:
+      target: '.'
+      solc-version: '0.8.28'
+      model: auto
+      publish: true
+      # Hardhat example; use your trusted project setup as needed:
+      # setup-command: npm ci
+      # max-source-bytes: 96000
+    # Only needed for personal repos / PAT authentication:
+    # secrets:
+    #   COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
+```
+
+The reusable workflow separates scanning/building, AI review, and issue publication into three jobs. The contract checkout has no persisted credentials. Only the review job receives Copilot credentials; only the publisher receives issue-write permission. The reviewer runs from an empty temporary directory, disables repository instructions and built-in MCPs, and exposes no model tools. Source and detector text are treated as untrusted evidence. Project setup still executes code, so run this on trusted revisions, not `pull_request_target` with fork code. For Foundry, install `forge` in your trusted `setup-command` before `forge install`; choose versions appropriate for your project.
+
+Reports include source code and may include security-sensitive evidence. Artifacts expire after one day and inherit the caller repository's visibility. Keep this workflow in the private contract repository; do not dispatch private Playmos audits in this public tool repository. A repository-scoped `GITHUB_TOKEN` cannot read or publish to an unrelated private repo; run in that repo or supply separately scoped credentials for a custom integration.
+
+## Reports and issues
+
+The tool writes `report.json`, `report.md`, and `slither.log`. JSON contains source hashes/content, Git revision, dirty-checkout status, detector severity/confidence, source locations and AI review. AI adds a verdict, reasoning, exploit scenario, remediation, and validation steps. It does **not** silently remove Slither findings or promote its opinion into a proven exploit. This release reviews Slither findings; it does not independently search for vulnerabilities missed by Slither.
+
+`publish` defaults to Medium and High findings, at most 20 selected findings. `--min-severity Low` includes Low findings; `--max-issues` changes the cap. Exceeding the cap fails before issue writes. Normal publication requires a complete AI review; `--allow-unreviewed` explicitly permits static-only candidates. Public destinations are blocked unless `--allow-public-destination` is supplied.
+
+Issues receive `security`, `slither-agent`, and `severity:*` labels. Each includes detector evidence, source locations, revision metadata and AI assessment. A deterministic fingerprint prevents duplicates for the same scope, detector, locations and evidence; source/line changes may create a new candidate. Open issues are updated when evidence changes; closed issues are left closed. Human labels are preserved. `publication.json` records created/updated/unchanged issue URLs. Run publishers serially per scope; the reusable workflow supplies concurrency control. Publication uses ordinary GitHub Issues, not Security Advisories or code-scanning alerts.
+
+## Validation
+
+```sh
+make test    # race-enabled unit/integration tests + go vet
+make smoke   # installs real Slither/solc and audits an intentionally vulnerable fixture
+```
+
+Tests cover failed analysis, checkout-independent IDs, source disclosure boundaries, malformed AI review, public-destination protection, issue caps, issue deduplication, updates and closed-issue handling. CI verifies real `reentrancy-eth` detection and builds portable binaries. Live Copilot review requires the caller's Copilot policy/credentials and is not exercised by the public smoke workflow. The example vault is intentionally vulnerable and must never be deployed.

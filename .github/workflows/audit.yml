@@ -1,0 +1,175 @@
+name: Reusable smart contract audit
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: Contract file or project path in the caller repository
+        type: string
+        default: '.'
+      solc-version:
+        description: Solidity compiler version
+        type: string
+        default: '0.8.28'
+      setup-command:
+        description: Trusted dependency/build setup, e.g. npm ci or forge install
+        type: string
+        default: ''
+      model:
+        description: Copilot model ID or auto
+        type: string
+        default: auto
+      publish:
+        description: Publish security issues in the caller's private repository
+        type: boolean
+        default: false
+      max-source-bytes:
+        type: number
+        default: 48000
+      min-severity:
+        type: string
+        default: Medium
+      agent-ref:
+        description: Tool revision; pin to a reviewed commit for production
+        type: string
+        default: v0.1.0
+    secrets:
+      COPILOT_TOKEN:
+        description: Optional PAT with Copilot Requests; needed for personal repositories
+        required: false
+
+# The caller must grant copilot-requests: write for GITHUB_TOKEN authentication.
+# Scan/build, AI review and publication run on separate runners with separate tokens.
+permissions: {}
+concurrency:
+  group: slither-agent-${{ github.repository }}-${{ inputs.target }}
+  cancel-in-progress: false
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          path: contracts-repo
+      - uses: actions/checkout@v6
+        with:
+          repository: dmikey/slither-agent
+          ref: ${{ inputs.agent-ref }}
+          persist-credentials: false
+          path: audit-tool
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Build audit tool
+        working-directory: audit-tool
+        run: go build -trimpath -o bin/slither-agent ./cmd/slither-agent
+      - name: Install pinned Slither and compiler
+        working-directory: audit-tool
+        env:
+          SOLC: ${{ inputs.solc-version }}
+        run: ./bin/slither-agent setup --solc-version "$SOLC"
+      - name: Run caller's trusted project setup
+        working-directory: contracts-repo
+        env:
+          SETUP_COMMAND: ${{ inputs.setup-command }}
+        run: |
+          export PATH="$GITHUB_WORKSPACE/audit-tool/.slither-venv/bin:$PATH"
+          if [ -n "$SETUP_COMMAND" ]; then bash -e -o pipefail -c "$SETUP_COMMAND"; fi
+      - name: Analyze contracts without AI or issue-write credentials
+        env:
+          TARGET: ${{ inputs.target }}
+          SCOPE: ${{ github.repository }}:${{ inputs.target }}
+          SOLC: ${{ inputs.solc-version }}
+          SOURCE_LIMIT: ${{ inputs.max-source-bytes }}
+        run: |
+          ./audit-tool/bin/slither-agent audit --target "contracts-repo/$TARGET" \
+            --scope "$SCOPE" --ai none --out scan-report \
+            --venv audit-tool/.slither-venv \
+            --solc-version "$SOLC" --max-source-bytes "$SOURCE_LIMIT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slither-source-evidence
+          path: scan-report/report.json
+          retention-days: 1
+  review:
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      copilot-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: dmikey/slither-agent
+          ref: ${{ inputs.agent-ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v5
+        with:
+          name: slither-source-evidence
+          path: scan-report
+      - run: |
+          go build -trimpath -o bin/slither-agent ./cmd/slither-agent
+          npm install -g @github/copilot@1.0.97
+      - name: Review Slither evidence with Copilot (no model tools)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_TOKEN }}
+          MODEL: ${{ inputs.model }}
+        run: ./bin/slither-agent review --report scan-report/report.json --out reviewed-report --model "$MODEL"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-security-report
+          path: reviewed-report/
+          retention-days: 1
+  publish:
+    if: inputs.publish
+    needs: review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: dmikey/slither-agent
+          ref: ${{ inputs.agent-ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - uses: actions/download-artifact@v5
+        with:
+          name: reviewed-security-report
+          path: reviewed-report
+      - run: go build -trimpath -o bin/slither-agent ./cmd/slither-agent
+      - name: Publish candidates in the caller's private repository
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          MIN_SEVERITY: ${{ inputs.min-severity }}
+        run: ./bin/slither-agent publish --report reviewed-report/report.json --repo "$REPO" --min-severity "$MIN_SEVERITY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: issue-publication-receipt
+          path: reviewed-report/publication.json
+          if-no-files-found: ignore
+          retention-days: 1
