@@ -101,6 +101,9 @@ func publishCommand(ctx context.Context, args []string, w io.Writer) error {
 	if !r.Reviewed && !*allowUnreviewed {
 		return fmt.Errorf("report has not completed AI review; run review or explicitly --allow-unreviewed")
 	}
+	if r.Risk != nil && r.Risk.Status != "passed" {
+		return fmt.Errorf("risk stage did not pass; publication blocked")
+	}
 	selected := []Finding{}
 	for _, finding := range r.Findings {
 		if rank(finding.Severity) >= rank(*min) {

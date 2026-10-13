@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 const SlitherVersion = "0.11.6"
 const SolcSelectVersion = "1.2.0"
 
@@ -35,6 +35,8 @@ func Run(ctx context.Context, args []string, w io.Writer) error {
 		return audit(ctx, args[1:], w)
 	case "review":
 		return reviewCommand(ctx, args[1:], w)
+	case "risk":
+		return riskCommand(ctx, args[1:], w)
 	case "publish":
 		return publishCommand(ctx, args[1:], w)
 	default:
@@ -48,6 +50,7 @@ Commands (use COMMAND --help for flags):
   setup    Install pinned Slither and solc-select into a local Python environment
   audit    Run Slither, bundle sources, optionally review with Copilot, save report
   review   AI-review an existing report using GitHub Copilot CLI
+  risk     Execute a mapped Foundry exploit/fuzz/risk test plan in a local EVM
   publish  Create/update deduplicated security issues from a reviewed report
   version  Print binary version
 

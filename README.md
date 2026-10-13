@@ -57,12 +57,16 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.1.0
+    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.2.0
     with:
       target: '.'
       solc-version: '0.8.28'
       model: auto
       publish: true
+      # Optional Foundry exploit / fuzz / invariant test stage:
+      # risk-project: .
+      # risk-plan: risk-plan.json
+      # fuzz-runs: 256
       # Hardhat example; use your trusted project setup as needed:
       # setup-command: npm ci
       # max-source-bytes: 96000
@@ -71,11 +75,29 @@ jobs:
     #   COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
 ```
 
-The reusable workflow separates scanning/building, AI review, and issue publication into three jobs. The contract checkout has no persisted credentials. Only the review job receives Copilot credentials; only the publisher receives issue-write permission. The reviewer runs from an empty temporary directory, disables repository instructions and built-in MCPs, and exposes no model tools. Source and detector text are treated as untrusted evidence. Project setup still executes code, so run this on trusted revisions, not `pull_request_target` with fork code. For Foundry, install `forge` in your trusted `setup-command` before `forge install`; choose versions appropriate for your project.
+The reusable workflow runs optional local risk tests after scanning/building, then separates AI review and issue publication into distinct jobs. The contract checkout has no persisted credentials. Only the review job receives Copilot credentials; only the publisher receives issue-write permission. The reviewer runs from an empty temporary directory, disables repository instructions and built-in MCPs, and exposes no model tools. Source and detector text are treated as untrusted evidence. Project setup still executes code, so run this on trusted revisions, not `pull_request_target` with fork code. For Foundry, install `forge` in your trusted `setup-command` before `forge install`; choose versions appropriate for your project.
 
 Reports include source code and may include security-sensitive evidence. Artifacts expire after one day and inherit the caller repository's visibility. Keep this workflow in the private contract repository; do not dispatch private Playmos audits in this public tool repository. A repository-scoped `GITHUB_TOKEN` cannot read or publish to an unrelated private repo; run in that repo or supply separately scoped credentials for a custom integration.
 
-## Reports and issues
+## Penetration and risk tests
+
+The `risk` command adds an executed Foundry test stage before AI review. It runs your trusted project's exploit, fuzz and invariant tests in a local EVM, with an explicit [detector-to-test plan](examples/risk/plan.json). Tests are supplied by the project; the tool does not automatically generate attack contracts for arbitrary findings. [The example suite](examples/risk/test/VaultRisk.t.sol) reproduces a reentrancy drain, checks the remediation fixture, tests failed-transfer credit restoration, and runs 256 fuzz cases.
+
+```sh
+./bin/slither-agent audit --target . --scope owner/contracts --ai none
+./bin/slither-agent risk --report reports/report.json --project . \
+  --source-root . --plan risk-plan.json --solc /path/to/installed/solc
+./bin/slither-agent review --report reports/report.json
+./bin/slither-agent publish --report reports/report.json --repo owner/private-contracts
+```
+
+Use Foundry v1.8.5 or a version supporting `forge test --json-file`. Compilation is offline, so install the correct solc beforehand or pass `--solc`. Source hashes must match the Slither snapshot; changed source requires a new audit. The plan specifies an exact suite/test signature, detector `check`, a descriptive claim (`exploit-reproduced`, `mitigation-holds`, or `risk-property`) and description. Detector mappings associate evidence with every finding of that type; review applicability to each location. Claims describe the intended assertions, and a successful test means those assertions passed. It does not automatically establish the security of every mapped finding.
+
+Reports retain the exact test status, fuzz/invariant execution metadata, harness/config hashes, plan hash, Foundry version and finding IDs without dynamic coverage. Raw `forge-results.json` and `risk.log` are saved beside the reports. Missing/skipped mapped tests, failed tests, malformed output and execution errors fail the stage and block normal review/publication; existing AI review is invalidated before execution. Tests that prove an exploit works should assert the observed loss and pass when it is reproduced. A remediation fixture passing does not repair the original audited contract.
+
+The workflow enables this stage when `risk-project` is set; otherwise dynamic testing is skipped. Run only trusted local suites: FFI and filesystem cheatcode permissions are disabled and credentials are removed from the test process, but Forge is not a complete network sandbox. This tool does not provide RPC endpoints, private keys, deploy contracts or broadcast transactions. A suite with explicit fork/RPC calls would need separate authorization and isolation. No live-chain penetration testing is included.
+
+## Report contents and publication
 
 The tool writes `report.json`, `report.md`, and `slither.log`. JSON contains source hashes/content, Git revision, dirty-checkout status, detector severity/confidence, source locations and AI review. AI adds a verdict, reasoning, exploit scenario, remediation, and validation steps. It does **not** silently remove Slither findings or promote its opinion into a proven exploit. This release reviews Slither findings; it does not independently search for vulnerabilities missed by Slither.
 
@@ -88,6 +110,7 @@ Issues receive `security`, `slither-agent`, and `severity:*` labels. Each includ
 ```sh
 make test    # race-enabled unit/integration tests + go vet
 make smoke   # installs real Slither/solc and audits an intentionally vulnerable fixture
+make risk-smoke # requires forge; adds local exploit, remediation and fuzz tests
 ```
 
 Tests cover failed analysis, checkout-independent IDs, source disclosure boundaries, malformed AI review, public-destination protection, issue caps, issue deduplication, updates and closed-issue handling. CI verifies real `reentrancy-eth` detection and builds portable binaries. Live Copilot review requires the caller's Copilot policy/credentials and is not exercised by the public smoke workflow. The example vault is intentionally vulnerable and must never be deployed.

@@ -4,3 +4,5 @@
 /reports/
 /.env*
 *.test
+/examples/risk/out/
+/examples/risk/cache/

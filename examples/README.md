@@ -2,7 +2,7 @@
 
 This example runs real Slither against [VulnerableVault.sol](VulnerableVault.sol), an intentionally vulnerable ETH vault. The committed [Markdown report](reports/vulnerable-vault/report.md) and [JSON report](reports/vulnerable-vault/report.json) show the output from Slither 0.11.6 and Solidity 0.8.28.
 
-**Execution status:** static analysis completed; Copilot review, exploit execution and GitHub issue publication have not run. The walkthrough below explains the source code; it is not output from the Copilot review stage. Never deploy this fixture.
+**Execution status:** static analysis and local EVM exploit/risk tests completed; Copilot review and GitHub issue publication have not run. The walkthrough below explains the source code; it is not output from the Copilot review stage. Never deploy this fixture.
 
 ## Findings
 
@@ -13,7 +13,7 @@ This example runs real Slither against [VulnerableVault.sol](VulnerableVault.sol
 
 ### Reentrancy candidate
 
-An attacker contract can deposit ETH, call `withdraw()`, and use its receiving callback to call `withdraw()` again. The nested invocation reads the same balance because the first invocation has not cleared it yet. If the vault holds additional ETH, repeated withdrawals could consume funds credited to other depositors. This describes a possible attack sequence; no attacker contract or dynamic exploit test was executed for this report.
+An attacker contract can deposit ETH, call `withdraw()`, and use its receiving callback to call `withdraw()` again. The nested invocation reads the same balance because the first invocation has not cleared it yet. If the vault holds additional ETH, repeated withdrawals could consume funds credited to other depositors. The [attack test](risk/test/VaultRisk.t.sol) executed this sequence locally: a 1 ETH deposit produced 6 ETH in withdrawals and drained the victim's 5 ETH. The original static-only snapshot predates that test run; see the [risk report](reports/vulnerable-vault-risk/report.md) for executed evidence.
 
 A proposed fix moves the balance update before the external call:
 
@@ -29,7 +29,7 @@ function withdraw() external {
 
 The reverting `require` restores the balance if the transfer fails. Consider a reentrancy guard for a larger contract with multiple entry points, and check interactions across those functions. This snippet is a remediation proposal, not an audited replacement contract.
 
-To validate it, fund the vault from a normal depositor and an attacker contract, attempt recursive withdrawal, and assert that the attacker receives at most its own credited balance. Also check that the normal depositor's funds remain available and that a failed transfer restores the withdrawing account's balance. Those tests remain to be implemented and run.
+To validate it, fund the vault from a normal depositor and an attacker contract, attempt recursive withdrawal, and assert that the attacker receives at most its own credited balance. Also check that the normal depositor's funds remain available and that a failed transfer restores the withdrawing account's balance. The local test suite now exercises those checks, including 256 fuzz cases for deposit amounts and callback counts. Passing these tests establishes the recorded fixture behavior; it does not certify production safety.
 
 ### Low-level call observation
 
@@ -52,6 +52,21 @@ go build -trimpath -o bin/slither-agent ./cmd/slither-agent
 
 Open `reports/example-vault/report.md`. The report should contain the two detector findings above. The timestamp, revision and dirty-checkout status reflect your run and may differ from the committed snapshot. JSON also includes the exact contract source and its SHA-256 digest.
 
+## Execute penetration and risk tests
+
+Install [Foundry v1.8.5](https://github.com/foundry-rs/foundry/releases/tag/v1.8.5), then run:
+
+```sh
+./bin/slither-agent risk \
+  --report reports/example-vault/report.json \
+  --project examples/risk --source-root . \
+  --plan examples/risk/plan.json \
+  --solc .slither-venv/.solc-select/artifacts/solc-0.8.28/solc-0.8.28 \
+  --out reports/example-vault-risk
+```
+
+The [plan](risk/plan.json) links the reentrancy detector to four exact tests: reproducing the attack, checking the remediation against that attack, restoring credit after a rejected transfer, and fuzzing victim-fund preservation. All four passed, with 256 fuzz executions. The informational low-level-call finding remains dynamically untested. Read the committed [risk Markdown report](reports/vulnerable-vault-risk/report.md), [JSON report](reports/vulnerable-vault-risk/report.json) and [raw Foundry results](reports/vulnerable-vault-risk/forge-results.json).
+
 ## Add Copilot review
 
 With Copilot authentication configured as described in the [main README](../README.md):
@@ -59,7 +74,7 @@ With Copilot authentication configured as described in the [main README](../READ
 ```sh
 npm install -g @github/copilot@1.0.97
 ./bin/slither-agent review \
-  --report reports/example-vault/report.json \
+  --report reports/example-vault-risk/report.json \
   --out reports/example-vault-reviewed \
   --model auto
 ```

@@ -1,0 +1,20 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+cache_path = "cache"
+libs = []
+remappings = ["fixture/=../"]
+solc_version = "0.8.28"
+allow_paths = [".."]
+ffi = false
+fs_permissions = []
+
+[profile.default.fuzz]
+runs = 256
+seed = "0x1234"
+
+[profile.default.invariant]
+runs = 64
+depth = 32
+fail_on_revert = true

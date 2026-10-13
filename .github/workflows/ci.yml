@@ -17,7 +17,12 @@ jobs:
           cache: false
       - run: make test
       - uses: astral-sh/setup-uv@v7
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.5
       - run: make smoke
+      - name: Execute local exploit and fuzz tests
+        run: ./bin/slither-agent risk --report reports/report.json --project examples/risk --source-root . --plan examples/risk/plan.json --solc .slither-venv/.solc-select/artifacts/solc-0.8.28/solc-0.8.28
       - name: Assert real Slither detected the intentionally vulnerable fixture
         run: |
           python3 - <<'PY'
@@ -26,6 +31,10 @@ jobs:
               r = json.load(f)
           assert any(x['check'] == 'reentrancy-eth' and x['severity'] == 'High' for x in r['findings']), r
           assert not r['reviewed'] and not r['imported']
+          assert r['risk']['status'] == 'passed' and r['risk']['passed'] == 4
+          assert len(r['risk']['untested_finding_ids']) == 1
+          assert any(e['claim'] == 'exploit-reproduced' and e['status'] == 'Success' for e in r['risk']['evidence'])
+          assert any(e['kind'].get('Fuzz', {}).get('runs') == 256 for e in r['risk']['evidence'])
           PY
       - uses: actions/upload-artifact@v4
         with:
@@ -33,6 +42,8 @@ jobs:
           path: |
             reports/report.md
             reports/report.json
+            reports/forge-results.json
+            reports/risk.log
           retention-days: 7
   binaries:
     runs-on: ubuntu-latest

@@ -18,6 +18,17 @@ on:
         description: Copilot model ID or auto
         type: string
         default: auto
+      risk-project:
+        description: Optional trusted Foundry project path; empty skips dynamic testing
+        type: string
+        default: ''
+      risk-plan:
+        description: Detector-to-test plan path in the caller repository
+        type: string
+        default: risk-plan.json
+      fuzz-runs:
+        type: number
+        default: 256
       publish:
         description: Publish security issues in the caller's private repository
         type: boolean
@@ -31,7 +42,7 @@ on:
       agent-ref:
         description: Tool revision; pin to a reviewed commit for production
         type: string
-        default: v0.1.0
+        default: v0.2.0
     secrets:
       COPILOT_TOKEN:
         description: Optional PAT with Copilot Requests; needed for personal repositories
@@ -65,6 +76,10 @@ jobs:
           go-version: '1.24.x'
           cache: false
       - uses: astral-sh/setup-uv@v7
+      - uses: foundry-rs/foundry-toolchain@v1
+        if: inputs.risk-project != ''
+        with:
+          version: v1.8.5
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -94,10 +109,23 @@ jobs:
             --scope "$SCOPE" --ai none --out scan-report \
             --venv audit-tool/.slither-venv \
             --solc-version "$SOLC" --max-source-bytes "$SOURCE_LIMIT"
+      - name: Execute local penetration and risk tests before AI review
+        if: inputs.risk-project != ''
+        env:
+          RISK_PROJECT: ${{ inputs.risk-project }}
+          RISK_PLAN: ${{ inputs.risk-plan }}
+          FUZZ_RUNS: ${{ inputs.fuzz-runs }}
+          SOLC: ${{ inputs.solc-version }}
+        run: |
+          ./audit-tool/bin/slither-agent risk --report scan-report/report.json \
+            --project "contracts-repo/$RISK_PROJECT" --source-root contracts-repo \
+            --plan "contracts-repo/$RISK_PLAN" --out scan-report --fuzz-runs "$FUZZ_RUNS" \
+            --solc "audit-tool/.slither-venv/.solc-select/artifacts/solc-$SOLC/solc-$SOLC"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: slither-source-evidence
-          path: scan-report/report.json
+          path: scan-report/
           retention-days: 1
   review:
     needs: scan

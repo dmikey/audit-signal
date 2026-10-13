@@ -50,6 +50,7 @@ type Report struct {
 	Reviewed       bool              `json:"reviewed"`
 	Findings       []Finding         `json:"findings"`
 	Sources        map[string]Source `json:"sources"`
+	Risk           *RiskRun          `json:"risk,omitempty"`
 }
 type slitherOutput struct {
 	Success *bool           `json:"success"`
@@ -201,7 +202,10 @@ func saveReport(dir string, r Report) error {
 		return err
 	}
 	var md strings.Builder
-	fmt.Fprintf(&md, "# Smart contract audit\n\nScope: `%s`\n\nRevision: `%s` (dirty: %t)\n\nSlither: `%s`; AI model: `%s`; AI reviewed: %t; imported: %t\n\nAutomated findings require human validation. This is not proof of exploitability or a complete security audit. AI source coverage: %d files; dependency/vendor directories are excluded.\n\n%d findings\n\n", r.Scope, r.Revision, r.Dirty, r.SlitherVersion, r.Model, r.Reviewed, r.Imported, len(r.Sources), len(r.Findings))
+	fmt.Fprintf(&md, "# Smart contract audit\n\nScope: `%s`\n\nRevision: `%s` (dirty: %t)\n\nSlither: `%s`; AI model: `%s`; AI reviewed: %t; imported: %t\n\nAutomated findings require human validation. Executed risk tests establish only recorded local harness outcomes, not production safety or a complete security audit. AI source coverage: %d files; dependency/vendor directories are excluded.\n\n%d findings\n\n", r.Scope, r.Revision, r.Dirty, r.SlitherVersion, r.Model, r.Reviewed, r.Imported, len(r.Sources), len(r.Findings))
+	if r.Risk != nil {
+		md.WriteString(riskMarkdown(r, ""))
+	}
 	for _, f := range r.Findings {
 		md.WriteString(issueBody(r, f))
 		md.WriteString("\n---\n\n")
@@ -243,6 +247,18 @@ func loadReport(path string) (Report, error) {
 			}
 		}
 	}
+	if r.Risk != nil {
+		if r.Risk.Environment != "local-evm" || (r.Risk.Status != "passed" && r.Risk.Status != "failed" && r.Risk.Status != "error") {
+			return r, fmt.Errorf("invalid risk evidence")
+		}
+		for _, e := range r.Risk.Evidence {
+			for _, id := range e.FindingIDs {
+				if !seen[id] {
+					return r, fmt.Errorf("risk evidence refers to unknown finding")
+				}
+			}
+		}
+	}
 	return r, nil
 }
 
@@ -255,6 +271,7 @@ func issueBody(r Report, f Finding) string {
 	if f.Review != nil {
 		fmt.Fprintf(&b, "\n### AI review\n\nModel: `%s` · Verdict: **%s**\n\n%s\n\n### Exploit scenario\n\n%s\n\n### Remediation\n\n%s\n\n### Validation to perform\n\n%s\n", r.Model, f.Review.Verdict, f.Review.Reasoning, f.Review.ExploitScenario, f.Review.Remediation, f.Review.Validation)
 	}
+	b.WriteString(riskMarkdown(r, f.ID))
 	fmt.Fprintf(&b, "\n[Slither detector documentation](https://github.com/crytic/slither/wiki/Detector-Documentation#%s)\n", f.Check)
 	return b.String()
 }
