@@ -6,7 +6,7 @@ No OpenAI API key is required. The Go binary has no third-party Go dependencies.
 
 ## Example audit
 
-See the [VulnerableVault audit walkthrough](examples/README.md), with committed [Markdown](examples/reports/vulnerable-vault/report.md) and [JSON](examples/reports/vulnerable-vault/report.json) reports from a real Slither scan. It explains the High-severity reentrancy finding, a proposed fix and the validation still needed. The snapshot contains static analysis; Copilot review has not run.
+See the [VulnerableVault audit walkthrough](examples/README.md), with committed [Markdown](examples/reports/vulnerable-vault/report.md) and [JSON](examples/reports/vulnerable-vault/report.json) reports from a real Slither scan. It explains the High-severity reentrancy finding, a proposed fix and the validation still needed. See also the [executed penetration/risk report](examples/reports/vulnerable-vault-risk/report.md): four passing local EVM tests, including a reproduced drain and 256 fuzz cases. Copilot review has not run.
 
 ## Build and run
 
