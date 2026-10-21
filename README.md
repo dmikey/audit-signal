@@ -97,6 +97,13 @@ jobs:
 
 Set `ai: none` for a static audit with no model access. For the default Copilot review, you may also set `discover: 'true'` to look beyond Slither findings and `copilot-token: ${{ secrets.COPILOT_TOKEN }}` when using a PAT. To use another provider, set `provider` and `model` and supply the matching secret through `with`, for example `openai-api-key: ${{ secrets.OPENAI_API_KEY }}` or `anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}`. Secrets are supplied only to the selected AI steps, after the static scan. Do not place provider keys in job-level `env`, where dependency setup would inherit them. Install any trusted Foundry/Hardhat dependencies in a step before the action.
 
+To record an existing local test suite in the same report, set `suite-project`
+to `contracts` and `suite-command-json` to a JSON argument array such as
+`["./node_modules/.bin/hardhat","test","--network","hardhat"]`. The action
+exposes `suite-log` for a short-lived private artifact. It runs before Copilot's
+Node version is installed, so the caller's project toolchain is retained for
+compilation and tests. Suite results are project-level evidence only.
+
 This action writes reports to the runner's temporary directory and does not publish issues. Use the reusable workflow below when you need isolated jobs for risk tests, AI review, and issue publication. Its jobs keep model credentials away from project setup and give issue-write permission only to the publisher. GitHub [distinguishes composite actions from reusable workflows](https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#composite-actions-and-reusable-workflows).
 
 ### Full reusable workflow
@@ -161,6 +168,23 @@ The reusable workflow runs optional local risk tests after scanning/building, th
 Reports include source code and may include security-sensitive evidence. Artifacts expire after one day and inherit the caller repository's visibility. Keep this workflow in the private contract repository; do not dispatch private Playmos audits in this public tool repository. A repository-scoped `GITHUB_TOKEN` cannot read or publish to an unrelated private repo; run in that repo or supply separately scoped credentials for a custom integration.
 
 ## Penetration and risk tests
+
+For a repository's existing Hardhat or other project test suite, record a bounded
+execution separately from finding-specific risk tests:
+
+```bash
+audit-signal suite --report reports/report.json --source-root . --project contracts \
+  --out reports --command-json '["./node_modules/.bin/hardhat","test","--network","hardhat"]'
+```
+
+`suite` verifies every audited source hash before execution, runs the supplied
+argument array without a shell or inherited credentials, saves a private capped
+log and its SHA-256, and records the exit status in `project_tests`. It runs
+trusted repository code, so use a restricted runner and avoid commands that
+contact a live network unless intended. A passing regression suite is reported
+at project level only; it never marks a scanner finding as reproduced or fixed.
+Use the mapped `risk` stage below for that stronger claim. Do not put secrets in
+command arguments, since the command is saved in the report.
 
 The `risk` command adds an executed Foundry test stage before AI review. It runs your trusted project's exploit, fuzz and invariant tests in a local EVM, with an explicit [detector-to-test plan](examples/risk/plan.json). Tests are supplied by the project; the tool does not automatically generate attack contracts for arbitrary findings. [The example suite](examples/risk/test/VaultRisk.t.sol) reproduces a reentrancy drain, checks the remediation fixture, tests failed-transfer credit restoration, and runs 256 fuzz cases.
 

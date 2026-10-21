@@ -80,6 +80,7 @@ type Report struct {
 	Sources           map[string]Source `json:"sources"`
 	Coverage          *CoverageReceipt  `json:"coverage,omitempty"`
 	Risk              *RiskRun          `json:"risk,omitempty"`
+	ProjectTests      []ProjectTestRun  `json:"project_tests,omitempty"`
 }
 type slitherOutput struct {
 	Success *bool           `json:"success"`
@@ -241,6 +242,13 @@ func saveReport(dir string, r Report) error {
 	if r.Risk != nil {
 		md.WriteString(riskMarkdown(r, ""))
 	}
+	if len(r.ProjectTests) > 0 {
+		md.WriteString("### Project test suites (unmapped)\n\nThese commands ran with audited source hashes unchanged before and after execution. Test harness contents are not attested here. They are not finding-specific exploit reproductions and do not change any finding's dynamic-test status.\n\n")
+		for _, run := range r.ProjectTests {
+			fmt.Fprintf(&md, "- **%s**: `%s` in `%s`; exit code %d; log SHA-256 `%s` (`%s`).\n", run.Status, strings.Join(run.Command, " "), run.Project, run.ExitCode, run.LogSHA256, run.LogFile)
+		}
+		md.WriteString("\n")
+	}
 	for _, f := range r.Findings {
 		md.WriteString(issueBody(r, f))
 		md.WriteString("\n---\n\n")
@@ -344,6 +352,14 @@ func loadReport(path string) (Report, error) {
 					return r, fmt.Errorf("risk evidence refers to unknown finding")
 				}
 			}
+		}
+	}
+	for _, run := range r.ProjectTests {
+		if (run.Status != "passed" && run.Status != "failed" && run.Status != "error") || run.Project == "" || len(run.Command) == 0 || run.LogFile == "" || len(run.LogSHA256) != 64 || run.StartedAt == "" {
+			return r, fmt.Errorf("invalid project test evidence")
+		}
+		if _, err := hex.DecodeString(run.LogSHA256); err != nil {
+			return r, fmt.Errorf("invalid project test log digest")
 		}
 	}
 	for i := range r.Findings {
