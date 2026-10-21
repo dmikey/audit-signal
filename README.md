@@ -2,6 +2,8 @@
 
 A portable Go binary that runs [Slither](https://github.com/crytic/slither), searches source for additional issues with **GitHub Copilot**, reviews all findings, and creates deduplicated GitHub security issues. Intended for private smart contract repositories, including Foundry, Hardhat and standalone Solidity/Vyper targets.
 
+The [scanner strategy and benchmark plan](docs/SCANNER_STRATEGY.md) compares the main alternatives and defines how we will measure detection quality, proof, coverage and false positives.
+
 No OpenAI API key is required. The Go binary has no third-party Go dependencies. Python/Slither and Copilot CLI remain external runtime dependencies; they are not embedded in the binary.
 
 ## Example audit
@@ -10,7 +12,7 @@ See the [VulnerableVault audit walkthrough](examples/README.md), with committed 
 
 ## Build and run
 
-Requires Go 1.20+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and Node.js 22+ for Copilot CLI. CI produces binaries for Linux, macOS and Windows. Slither setup and live scanning are tested on Linux and macOS; Windows compiler availability depends on your toolchain.
+Requires Go 1.20+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and Node.js 22+ for Copilot CLI. The reusable workflow defaults to **Node.js 26.12.1**, the current release containing the [October 21, 2026 TLS security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases); callers can override `node-version` when a different patched release is needed. CI produces binaries for Linux, macOS and Windows. Slither setup and live scanning are tested on Linux and macOS; Windows compiler availability depends on your toolchain.
 
 ```sh
 go build -trimpath -o bin/slither-agent ./cmd/slither-agent
@@ -37,7 +39,7 @@ Use the project root as `--target` when compilation depends on Foundry/Hardhat c
 
 `audit` defaults to AI review. Use `--ai none` for a Slither-only run. `review --report ...` adds AI review to an existing report. `audit --input slither.json --target ... --scope ...` imports Slither output and marks the report as imported. Imported output must correspond to the supplied source; the tool cannot independently establish its provenance.
 
-To search for flaws beyond Slither's detectors, run `discover` after the static audit, then `review` before publication. Discovery requires exact source file, line and excerpt evidence for each candidate. A new discovery clears any prior review, and the reviewer evaluates all findings together. The model may miss flaws or propose false positives; a line match establishes provenance, not exploitability. To make a discovery concrete, add a project-specific Foundry test and map its `ai-*` check in the risk plan.
+To search for flaws beyond Slither's detectors, run `discover` after the static audit, then `review` before publication. Discovery requires exact source file, line and excerpt evidence for each candidate. A new discovery clears any prior review, and the reviewer evaluates all findings together. The model may miss flaws or propose false positives; a line match establishes provenance, not exploitability. To make a discovery concrete, add a project-specific Foundry test and map its source file and line in the risk plan; this survives model-generated check-name changes.
 
 ```sh
 ./bin/slither-agent audit --target contracts --scope owner/contracts --ai none
@@ -71,6 +73,7 @@ jobs:
     with:
       target: '.'
       solc-version: '0.8.28'
+      node-version: '26.12.1'
       model: auto
       # discover: true (default; searches source for additional candidates)
       publish: true
@@ -102,7 +105,7 @@ The `risk` command adds an executed Foundry test stage before AI review. It runs
 ./bin/slither-agent publish --report reports/report.json --repo owner/private-contracts
 ```
 
-Use Foundry v1.8.5 or a version supporting `forge test --json-file`. Compilation is offline, so install the correct solc beforehand or pass `--solc`. Source hashes must match the Slither snapshot; changed source requires a new audit. The plan specifies an exact suite/test signature, detector `check`, a descriptive claim (`exploit-reproduced`, `mitigation-holds`, or `risk-property`) and description. Detector mappings associate evidence with every finding of that type; review applicability to each location. Claims describe the intended assertions, and a successful test means those assertions passed. It does not automatically establish the security of every mapped finding.
+Use Foundry v1.8.5 or a version supporting `forge test --json-file`. Compilation is offline, so install the correct solc beforehand or pass `--solc`. Source hashes must match the Slither snapshot; changed source requires a new audit. The plan specifies an exact suite/test signature, either a detector `check` or source `file` and `line`, a descriptive claim (`exploit-reproduced`, `mitigation-holds`, or `risk-property`) and description. Detector mappings associate evidence with every finding of that type; source-location mappings target one fault site. Claims describe the intended assertions, and a successful test means those assertions passed. It does not automatically establish the security of every mapped finding.
 
 Reports retain the exact test status, fuzz/invariant execution metadata, harness/config hashes, plan hash, Foundry version and finding IDs without dynamic coverage. Raw `forge-results.json` and `risk.log` are saved beside the reports. Missing/skipped mapped tests, failed tests, malformed output and execution errors fail the stage and block normal review/publication; existing AI review is invalidated before execution. Tests that prove an exploit works should assert the observed loss and pass when it is reproduced. A remediation fixture passing does not repair the original audited contract.
 

@@ -37,6 +37,22 @@ func TestRiskResultsRequireExecutedMappedAssertions(t *testing.T) {
 	}
 }
 
+func TestRiskPlanCanSelectDiscoveryBySourceLocation(t *testing.T) {
+	r := Report{Findings: []Finding{{ID: digest("one"), Check: "ai-model-name-may-change", Locations: []Location{{File: "Pool.sol", Lines: []int{35}}}}}}
+	plan := []byte(`{"version":1,"cases":[{"file":"Pool.sol","line":35,"suite":"test/Pool.t.sol:PoolTest","test":"testExploit()","claim":"exploit-reproduced","description":"repeat claim"}]}`)
+	cases, err := parseRiskPlan(plan, r)
+	if err != nil || len(cases) != 1 || !riskCaseMatches(cases[0], r.Findings[0]) {
+		t.Fatalf("source-location mapping failed: %v", err)
+	}
+	r.Findings[0].Check = "ai-different-model-label"
+	if !riskCaseMatches(cases[0], r.Findings[0]) {
+		t.Fatal("model label changed location mapping")
+	}
+	if _, err := parseRiskPlan([]byte(`{"version":1,"cases":[{"file":"Pool.sol","line":36,"suite":"x","test":"y","claim":"risk-property","description":"z"}]}`), r); err == nil {
+		t.Fatal("accepted unmapped source location")
+	}
+}
+
 func TestRiskCommandPreservesFailureAndStripsCredentials(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX mock runner")

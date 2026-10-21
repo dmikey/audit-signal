@@ -18,6 +18,10 @@ on:
         description: Copilot model ID or auto
         type: string
         default: auto
+      node-version:
+        description: Patched Node.js version for project setup and Copilot CLI
+        type: string
+        default: '26.12.1'
       discover:
         description: Search audited source for new findings beyond Slither detectors
         type: boolean
@@ -86,7 +90,7 @@ jobs:
           version: v1.8.5
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: ${{ inputs.node-version }}
       - name: Build audit tool
         working-directory: audit-tool
         run: go build -trimpath -o bin/slither-agent ./cmd/slither-agent
@@ -150,7 +154,7 @@ jobs:
           cache: false
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: ${{ inputs.node-version }}
       - uses: actions/download-artifact@v5
         with:
           name: slither-source-evidence

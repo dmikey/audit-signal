@@ -1,6 +1,6 @@
 {
   "version": 1,
   "cases": [
-    {"check":"ai-caller-beneficiary-checkpoint-mismatch","suite":"test/RewardPoolRisk.t.sol:RewardPoolRiskTest","test":"test_FreshCallersExhaustReservesAndLockStake()","claim":"exploit-reproduced","description":"Eleven fresh callers credit the same beneficiary in one epoch; withdrawing rewards consumes stake and blocks full stake withdrawal in the local EVM."}
+    {"file":"examples/RewardPool.sol","line":35,"suite":"test/RewardPoolRisk.t.sol:RewardPoolRiskTest","test":"test_FreshCallersExhaustReservesAndLockStake()","claim":"exploit-reproduced","description":"Eleven fresh callers credit the same beneficiary in one epoch; withdrawing rewards consumes stake and blocks full stake withdrawal in the local EVM."}
   ]
 }

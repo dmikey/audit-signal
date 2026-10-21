@@ -14,6 +14,8 @@ import (
 
 type RiskCase struct {
 	Check       string `json:"check"`
+	File        string `json:"file,omitempty"`
+	Line        int    `json:"line,omitempty"`
 	Suite       string `json:"suite"`
 	Test        string `json:"test"`
 	Claim       string `json:"claim"`
@@ -213,14 +215,17 @@ func parseRiskPlan(data []byte, r Report) ([]RiskCase, error) {
 	if plan.Version != 1 || len(plan.Cases) == 0 {
 		return nil, fmt.Errorf("risk plan requires version 1 and at least one case")
 	}
-	checks := map[string]bool{}
-	for _, f := range r.Findings {
-		checks[f.Check] = true
-	}
 	seen := map[string]bool{}
 	for _, c := range plan.Cases {
-		if !checks[c.Check] || c.Suite == "" || c.Test == "" || c.Description == "" || (c.Claim != "exploit-reproduced" && c.Claim != "mitigation-holds" && c.Claim != "risk-property") {
-			return nil, fmt.Errorf("invalid risk case or detector not present in report: %s", c.Test)
+		matches := false
+		for _, finding := range r.Findings {
+			if riskCaseMatches(c, finding) {
+				matches = true
+				break
+			}
+		}
+		if (c.Check == "") == (c.File == "") || (c.Check != "" && c.Line != 0) || (c.File != "" && (c.Line < 1 || filepath.IsAbs(c.File) || c.File == ".." || c.File != filepath.ToSlash(filepath.Clean(c.File)) || len(c.File) >= 3 && c.File[:3] == "../")) || !matches || c.Suite == "" || c.Test == "" || c.Description == "" || (c.Claim != "exploit-reproduced" && c.Claim != "mitigation-holds" && c.Claim != "risk-property") {
+			return nil, fmt.Errorf("invalid risk case or finding selector not present in report: %s", c.Test)
 		}
 		key := c.Suite + "\x00" + c.Test
 		if seen[key] {
@@ -229,6 +234,22 @@ func parseRiskPlan(data []byte, r Report) ([]RiskCase, error) {
 		seen[key] = true
 	}
 	return plan.Cases, nil
+}
+
+func riskCaseMatches(c RiskCase, f Finding) bool {
+	if c.Check != "" {
+		return c.Check == f.Check
+	}
+	for _, loc := range f.Locations {
+		if loc.File == c.File {
+			for _, line := range loc.Lines {
+				if line == c.Line {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func evaluateRisk(data []byte, cases []RiskCase, r Report, risk RiskRun) (RiskRun, error) {
@@ -265,7 +286,7 @@ func evaluateRisk(data []byte, cases []RiskCase, r Report, risk RiskRun) (RiskRu
 		}
 		e := RiskEvidence{RiskCase: c, FindingIDs: []string{}, Status: result.Status, Reason: result.Reason, Kind: result.Kind}
 		for _, f := range r.Findings {
-			if f.Check == c.Check {
+			if riskCaseMatches(c, f) {
 				e.FindingIDs = append(e.FindingIDs, f.ID)
 				covered[f.ID] = true
 			}
