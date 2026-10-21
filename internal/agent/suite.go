@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,15 +18,62 @@ import (
 // ProjectTestRun records a project-wide regression command. It deliberately has
 // no finding IDs or exploit claim; only a mapped risk plan can make those claims.
 type ProjectTestRun struct {
-	Status     string   `json:"status"`
-	Project    string   `json:"project"`
-	Command    []string `json:"command"`
-	StartedAt  string   `json:"started_at"`
-	DurationMs int64    `json:"duration_ms"`
-	ExitCode   int      `json:"exit_code"`
-	LogFile    string   `json:"log_file"`
-	LogSHA256  string   `json:"log_sha256"`
-	Truncated  bool     `json:"truncated,omitempty"`
+	Status       string   `json:"status"`
+	Project      string   `json:"project"`
+	Command      []string `json:"command"`
+	StartedAt    string   `json:"started_at"`
+	DurationMs   int64    `json:"duration_ms"`
+	ExitCode     int      `json:"exit_code"`
+	LogFile      string   `json:"log_file"`
+	LogSHA256    string   `json:"log_sha256"`
+	Truncated    bool     `json:"truncated,omitempty"`
+	ResultFormat string   `json:"result_format,omitempty"`
+	PassedTests  int      `json:"passed_tests"`
+	PendingTests int      `json:"pending_tests"`
+	FailedTests  int      `json:"failed_tests"`
+	ResultError  string   `json:"result_error,omitempty"`
+}
+
+var (
+	mochaANSI    = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	mochaSummary = regexp.MustCompile(`^\s*([0-9]+) (passing|pending|failing)(?: \([^\r\n]*\))?\s*$`)
+)
+
+func mochaSpecResults(log []byte) (passed, pending, failed int, err error) {
+	seen := map[string]bool{}
+	for _, line := range strings.Split(mochaANSI.ReplaceAllString(string(log), ""), "\n") {
+		match := mochaSummary.FindStringSubmatch(line)
+		if match == nil {
+			continue
+		}
+		kind := match[2]
+		if seen[kind] {
+			return 0, 0, 0, fmt.Errorf("ambiguous Mocha %s summaries", kind)
+		}
+		seen[kind] = true
+		n, parseErr := strconv.Atoi(match[1])
+		if parseErr != nil {
+			return 0, 0, 0, fmt.Errorf("invalid Mocha test count")
+		}
+		switch kind {
+		case "passing":
+			passed = n
+		case "pending":
+			pending = n
+		case "failing":
+			failed = n
+		}
+	}
+	if !seen["passing"] {
+		return 0, 0, 0, fmt.Errorf("Mocha passing summary missing")
+	}
+	if passed == 0 {
+		return 0, pending, failed, fmt.Errorf("Mocha ran zero passing tests")
+	}
+	if failed > 0 {
+		return passed, pending, failed, fmt.Errorf("Mocha reported failing tests")
+	}
+	return passed, pending, failed, nil
 }
 
 type boundedLog struct {
@@ -61,12 +110,16 @@ func suiteCommand(ctx context.Context, args []string, w io.Writer) error {
 	project := f.String("project", ".", "Trusted test project inside the source root")
 	out := f.String("out", "reports", "Output report and test log directory")
 	commandJSON := f.String("command-json", "", "JSON array of executable and arguments; no shell")
+	resultFormat := f.String("result-format", "exit-only", "Result evidence: exit-only or mocha-spec")
 	timeout := f.Duration("timeout", 10*time.Minute, "Test command timeout")
 	if err := parse(f, args); err != nil {
 		return err
 	}
 	if *timeout <= 0 || len(*commandJSON) > 8192 {
 		return fmt.Errorf("invalid suite timeout or command length")
+	}
+	if *resultFormat != "exit-only" && *resultFormat != "mocha-spec" {
+		return fmt.Errorf("unsupported suite result format: %s", *resultFormat)
 	}
 	var command []string
 	if err := json.Unmarshal([]byte(*commandJSON), &command); err != nil || len(command) == 0 || len(command) > 64 {
@@ -153,7 +206,7 @@ func suiteCommand(ctx context.Context, args []string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	status, exitCode := "passed", 0
+	status, exitCode := "completed", 0
 	if runErr != nil {
 		status, exitCode = "failed", -1
 		if exitErr, ok := runErr.(*exec.ExitError); ok {
@@ -163,14 +216,35 @@ func suiteCommand(ctx context.Context, args []string, w io.Writer) error {
 			status = "error"
 		}
 	}
+	passed, pending, failed := 0, 0, 0
+	var resultErr error
+	if *resultFormat == "mocha-spec" {
+		if bounded.truncated {
+			resultErr = fmt.Errorf("test log truncated before result verification")
+		} else {
+			passed, pending, failed, resultErr = mochaSpecResults(logData)
+		}
+		if runErr == nil {
+			if resultErr != nil {
+				status = "error"
+			} else {
+				status = "passed"
+			}
+		}
+	}
 	sourceErr := verifySuiteSources(rootAbs, r.Sources)
 	if sourceErr != nil {
 		status = "error"
+	}
+	resultError := ""
+	if resultErr != nil {
+		resultError = resultErr.Error()
 	}
 	r.ProjectTests = append(r.ProjectTests, ProjectTestRun{
 		Status: status, Project: filepath.ToSlash(projectRel), Command: command,
 		StartedAt: start.Format(time.RFC3339), DurationMs: time.Since(start).Milliseconds(),
 		ExitCode: exitCode, LogFile: logName, LogSHA256: digest(string(logData)), Truncated: bounded.truncated,
+		ResultFormat: *resultFormat, PassedTests: passed, PendingTests: pending, FailedTests: failed, ResultError: resultError,
 	})
 	if err := saveReport(*out, r); err != nil {
 		return err
@@ -181,6 +255,9 @@ func suiteCommand(ctx context.Context, args []string, w io.Writer) error {
 	}
 	if runErr != nil {
 		return fmt.Errorf("project suite %s: %w; inspect %s", status, runErr, logPath)
+	}
+	if resultErr != nil {
+		return fmt.Errorf("project suite result unverified: %w; inspect %s", resultErr, logPath)
 	}
 	return nil
 }

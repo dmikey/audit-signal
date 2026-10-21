@@ -103,7 +103,10 @@ to `contracts` and `suite-command-json` to a JSON argument array such as
 exposes `suite-log` and `report-directory` even when the suite fails, so an
 `always()` artifact step can retain diagnostics briefly. It runs before Copilot's
 Node version is installed, so the caller's project toolchain is retained for
-compilation and tests. Suite results are project-level evidence only.
+compilation and tests. Add `suite-result-format: mocha-spec` for a Hardhat/Mocha
+spec suite to require a positive reported test count; the default `exit-only`
+records successful command completion without claiming that tests ran. Suite
+results are project-level evidence only.
 
 This action writes reports to the runner's temporary directory and does not publish issues. Use the reusable workflow below when you need isolated jobs for risk tests, AI review, and issue publication. Its jobs keep model credentials away from project setup and give issue-write permission only to the publisher. GitHub [distinguishes composite actions from reusable workflows](https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#composite-actions-and-reusable-workflows).
 
@@ -180,7 +183,14 @@ audit-signal suite --report reports/report.json --source-root . --project contra
 
 `suite` verifies every audited source hash before execution, runs the supplied
 argument array without a shell or inherited credentials, saves a private capped
-log and its SHA-256, and records the exit status in `project_tests`. It runs
+log and its SHA-256, and records the exit status in `project_tests`. By default,
+an exit code of zero is labeled `completed` because the scanner cannot tell if
+any tests actually ran. For Hardhat/Mocha's spec reporter, add
+`--result-format mocha-spec` (or Action input `suite-result-format: mocha-spec`).
+The scanner then requires one unambiguous `N passing` summary with N greater
+than zero, records passing/pending/failing counts, and rejects missing summaries,
+reported failures, or truncated logs. This verifies the runner's reported count,
+not the quality or completeness of its assertions. It runs
 trusted repository code, so use a restricted runner and avoid commands that
 contact a live network unless intended. A passing regression suite is reported
 at project level only; it never marks a scanner finding as reproduced or fixed.
