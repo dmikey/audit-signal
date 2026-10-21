@@ -178,6 +178,24 @@ func TestPublishLimitBeforeCredentials(t *testing.T) {
 	}
 }
 
+func TestPublishSelectionRequiresLikelyValidByDefault(t *testing.T) {
+	base := Finding{ID: digest("valid"), Check: "ai-accounting", Severity: "High", Review: &Review{Verdict: "likely-valid"}}
+	falsePositive := Finding{ID: digest("false"), Check: "ai-noise", Severity: "High", Review: &Review{Verdict: "likely-false-positive"}}
+	uncertain := Finding{ID: digest("uncertain"), Check: "ai-uncertain", Severity: "High", Review: &Review{Verdict: "needs-review"}}
+	r := Report{Reviewed: true, Findings: []Finding{base, falsePositive, uncertain}}
+	selected, err := selectFindings(r, "Medium", "", "likely-valid")
+	if err != nil || len(selected) != 1 || selected[0].ID != base.ID {
+		t.Fatalf("default publish selected unvalidated candidates: %+v, %v", selected, err)
+	}
+	if _, err := selectFindings(r, "Medium", falsePositive.ID, "likely-valid"); err == nil {
+		t.Fatal("explicit ID bypassed verdict filter")
+	}
+	selected, err = selectFindings(r, "Medium", uncertain.ID, "needs-review")
+	if err != nil || len(selected) != 1 || selected[0].ID != uncertain.ID {
+		t.Fatal("explicit needs-review selection failed")
+	}
+}
+
 func TestToolEnvironmentUsesLocalCompilerCache(t *testing.T) {
 	env := toolEnv(".slither-venv", "0.8.28")
 	if !strings.Contains(strings.Join(env, "\n"), "VIRTUAL_ENV="+absolute(".slither-venv")) {

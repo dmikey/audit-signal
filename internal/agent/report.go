@@ -16,14 +16,21 @@ type Location struct {
 	Lines []int  `json:"lines"`
 }
 type Finding struct {
-	ID          string     `json:"id"`
-	Check       string     `json:"check"`
-	Severity    string     `json:"severity"`
-	Confidence  string     `json:"confidence"`
-	Description string     `json:"description"`
-	Locations   []Location `json:"locations"`
-	Origin      string     `json:"origin"`
-	Review      *Review    `json:"review,omitempty"`
+	ID          string             `json:"id"`
+	Check       string             `json:"check"`
+	Severity    string             `json:"severity"`
+	Confidence  string             `json:"confidence"`
+	Description string             `json:"description"`
+	Locations   []Location         `json:"locations"`
+	Origin      string             `json:"origin"`
+	Discovery   *DiscoveryEvidence `json:"discovery,omitempty"`
+	Review      *Review            `json:"review,omitempty"`
+}
+type DiscoveryEvidence struct {
+	SourceExcerpt   string `json:"source_excerpt"`
+	ExploitScenario string `json:"exploit_scenario"`
+	Remediation     string `json:"remediation"`
+	Validation      string `json:"validation"`
 }
 type Review struct {
 	ID              string `json:"id"`
@@ -47,6 +54,8 @@ type Report struct {
 	CreatedAt      string            `json:"created_at"`
 	SlitherVersion string            `json:"slither_version"`
 	Model          string            `json:"model,omitempty"`
+	DiscoveryModel string            `json:"discovery_model,omitempty"`
+	Discovered     bool              `json:"discovered,omitempty"`
 	Reviewed       bool              `json:"reviewed"`
 	Findings       []Finding         `json:"findings"`
 	Sources        map[string]Source `json:"sources"`
@@ -202,7 +211,7 @@ func saveReport(dir string, r Report) error {
 		return err
 	}
 	var md strings.Builder
-	fmt.Fprintf(&md, "# Smart contract audit\n\nScope: `%s`\n\nRevision: `%s` (dirty: %t)\n\nSlither: `%s`; AI model: `%s`; AI reviewed: %t; imported: %t\n\nAutomated findings require human validation. Executed risk tests establish only recorded local harness outcomes, not production safety or a complete security audit. AI source coverage: %d files; dependency/vendor directories are excluded.\n\n%d findings\n\n", r.Scope, r.Revision, r.Dirty, r.SlitherVersion, r.Model, r.Reviewed, r.Imported, len(r.Sources), len(r.Findings))
+	fmt.Fprintf(&md, "# Smart contract audit\n\nScope: `%s`\n\nRevision: `%s` (dirty: %t)\n\nSlither: `%s`; AI model: `%s`; AI reviewed: %t; AI discovery: %t; discovery model: `%s`; imported: %t\n\nAutomated findings require human validation. Executed risk tests establish only recorded local harness outcomes, not production safety or a complete security audit. AI source coverage: %d files; dependency/vendor directories are excluded.\n\n%d findings\n\n", r.Scope, r.Revision, r.Dirty, r.SlitherVersion, r.Model, r.Reviewed, r.Discovered, r.DiscoveryModel, r.Imported, len(r.Sources), len(r.Findings))
 	if r.Risk != nil {
 		md.WriteString(riskMarkdown(r, ""))
 	}
@@ -234,6 +243,20 @@ func loadReport(path string) (Report, error) {
 			return r, fmt.Errorf("invalid finding ID")
 		}
 		seen[f.ID] = true
+		if f.Origin == "ai-discovery" {
+			if !r.Discovered || r.DiscoveryModel == "" || f.Discovery == nil || strings.TrimSpace(f.Discovery.SourceExcerpt) == "" || len(f.Locations) != 1 || len(f.Locations[0].Lines) != 1 {
+				return r, fmt.Errorf("incomplete AI discovery evidence")
+			}
+			loc := f.Locations[0]
+			src, ok := r.Sources[loc.File]
+			if !ok || loc.Lines[0] < 1 {
+				return r, fmt.Errorf("AI discovery source missing")
+			}
+			lines := strings.Split(src.Content, "\n")
+			if loc.Lines[0] > len(lines) || strings.TrimSpace(lines[loc.Lines[0]-1]) != f.Discovery.SourceExcerpt {
+				return r, fmt.Errorf("AI discovery source mismatch")
+			}
+		}
 	}
 	for name, src := range r.Sources {
 		if digest(src.Content) != src.SHA256 {
@@ -264,14 +287,19 @@ func loadReport(path string) (Report, error) {
 
 func issueBody(r Report, f Finding) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "<!-- slither-agent:%s -->\n## %s\n\n**Severity:** %s · **Confidence:** %s · **Origin:** %s\n\n**Scope:** `%s` · **Revision:** `%s` · **Dirty:** %t · **Imported:** %t\n\n**Status:** automated candidate; requires human validation.\n\n### Detector evidence\n\n%s\n\n", f.ID, f.Check, f.Severity, f.Confidence, f.Origin, r.Scope, r.Revision, r.Dirty, r.Imported, f.Description)
+	fmt.Fprintf(&b, "<!-- slither-agent:%s -->\n## %s\n\n**Severity:** %s · **Confidence:** %s · **Origin:** %s\n\n**Scope:** `%s` · **Revision:** `%s` · **Dirty:** %t · **Imported:** %t\n\n**Status:** automated candidate; requires human validation.\n\n### Source evidence\n\n%s\n\n", f.ID, f.Check, f.Severity, f.Confidence, f.Origin, r.Scope, r.Revision, r.Dirty, r.Imported, f.Description)
 	for _, l := range f.Locations {
 		fmt.Fprintf(&b, "- `%s` lines %v\n", l.File, l.Lines)
+	}
+	if f.Discovery != nil {
+		fmt.Fprintf(&b, "\nSource line: `%s`\n\n**Discovery model:** `%s`\n\n**Hypothesized attack:** %s\n\n**Proposed fix:** %s\n\n**Validation needed:** %s\n", f.Discovery.SourceExcerpt, r.DiscoveryModel, f.Discovery.ExploitScenario, f.Discovery.Remediation, f.Discovery.Validation)
 	}
 	if f.Review != nil {
 		fmt.Fprintf(&b, "\n### AI review\n\nModel: `%s` · Verdict: **%s**\n\n%s\n\n### Exploit scenario\n\n%s\n\n### Remediation\n\n%s\n\n### Validation to perform\n\n%s\n", r.Model, f.Review.Verdict, f.Review.Reasoning, f.Review.ExploitScenario, f.Review.Remediation, f.Review.Validation)
 	}
 	b.WriteString(riskMarkdown(r, f.ID))
-	fmt.Fprintf(&b, "\n[Slither detector documentation](https://github.com/crytic/slither/wiki/Detector-Documentation#%s)\n", f.Check)
+	if f.Origin == "slither" {
+		fmt.Fprintf(&b, "\n[Slither detector documentation](https://github.com/crytic/slither/wiki/Detector-Documentation#%s)\n", f.Check)
+	}
 	return b.String()
 }

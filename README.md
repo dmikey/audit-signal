@@ -1,6 +1,6 @@
 # slither-agent
 
-A portable Go binary that runs [Slither](https://github.com/crytic/slither), reviews its findings with **GitHub Copilot**, and creates deduplicated GitHub security issues. Intended for private smart contract repositories, including Foundry, Hardhat and standalone Solidity/Vyper targets.
+A portable Go binary that runs [Slither](https://github.com/crytic/slither), searches source for additional issues with **GitHub Copilot**, reviews all findings, and creates deduplicated GitHub security issues. Intended for private smart contract repositories, including Foundry, Hardhat and standalone Solidity/Vyper targets.
 
 No OpenAI API key is required. The Go binary has no third-party Go dependencies. Python/Slither and Copilot CLI remain external runtime dependencies; they are not embedded in the binary.
 
@@ -37,6 +37,16 @@ Use the project root as `--target` when compilation depends on Foundry/Hardhat c
 
 `audit` defaults to AI review. Use `--ai none` for a Slither-only run. `review --report ...` adds AI review to an existing report. `audit --input slither.json --target ... --scope ...` imports Slither output and marks the report as imported. Imported output must correspond to the supplied source; the tool cannot independently establish its provenance.
 
+To search for flaws beyond Slither's detectors, run `discover` after the static audit, then `review` before publication. Discovery requires exact source file, line and excerpt evidence for each candidate. A new discovery clears any prior review, and the reviewer evaluates all findings together. The model may miss flaws or propose false positives; a line match establishes provenance, not exploitability. To make a discovery concrete, add a project-specific Foundry test and map its `ai-*` check in the risk plan.
+
+```sh
+./bin/slither-agent audit --target contracts --scope owner/contracts --ai none
+./bin/slither-agent discover --report reports/report.json --model auto
+./bin/slither-agent risk --report reports/report.json --project . --source-root . --plan risk-plan.json
+./bin/slither-agent review --report reports/report.json --model auto
+./bin/slither-agent publish --report reports/report.json --repo owner/private-contracts
+```
+
 AI review consumes a bounded source bundle (48 KB by default). It excludes vendor/build directories (`node_modules`, `lib`, `out`, `cache`, `artifacts`) and ignores symlinks. An oversized bundle fails explicitly; narrow the target or raise `--max-source-bytes`. The serialized review payload is capped at 256 KB. Each Slither finding must receive exactly one valid review. Invalid, incomplete or failed AI output leaves the original Slither report available and prevents normal publication.
 
 ## Use in GitHub CI/CD
@@ -57,11 +67,12 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.2.0
+    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.3.0
     with:
       target: '.'
       solc-version: '0.8.28'
       model: auto
+      # discover: true (default; searches source for additional candidates)
       publish: true
       # Optional Foundry exploit / fuzz / invariant test stage:
       # risk-project: .
@@ -75,7 +86,7 @@ jobs:
     #   COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
 ```
 
-The reusable workflow runs optional local risk tests after scanning/building, then separates AI review and issue publication into distinct jobs. The contract checkout has no persisted credentials. Only the review job receives Copilot credentials; only the publisher receives issue-write permission. The reviewer runs from an empty temporary directory, disables repository instructions and built-in MCPs, and exposes no model tools. Source and detector text are treated as untrusted evidence. Project setup still executes code, so run this on trusted revisions, not `pull_request_target` with fork code. For Foundry, install `forge` in your trusted `setup-command` before `forge install`; choose versions appropriate for your project.
+The reusable workflow runs optional local risk tests after scanning/building, then discovers source-level candidates and reviews all findings in a separate job before issue publication. The contract checkout has no persisted credentials. Only the review job receives Copilot credentials; only the publisher receives issue-write permission. The reviewer runs from an empty temporary directory, disables repository instructions and built-in MCPs, and exposes no model tools. Source and detector text are treated as untrusted evidence. Project setup still executes code, so run this on trusted revisions, not `pull_request_target` with fork code. For Foundry, install `forge` in your trusted `setup-command` before `forge install`; choose versions appropriate for your project.
 
 Reports include source code and may include security-sensitive evidence. Artifacts expire after one day and inherit the caller repository's visibility. Keep this workflow in the private contract repository; do not dispatch private Playmos audits in this public tool repository. A repository-scoped `GITHUB_TOKEN` cannot read or publish to an unrelated private repo; run in that repo or supply separately scoped credentials for a custom integration.
 
@@ -95,13 +106,13 @@ Use Foundry v1.8.5 or a version supporting `forge test --json-file`. Compilation
 
 Reports retain the exact test status, fuzz/invariant execution metadata, harness/config hashes, plan hash, Foundry version and finding IDs without dynamic coverage. Raw `forge-results.json` and `risk.log` are saved beside the reports. Missing/skipped mapped tests, failed tests, malformed output and execution errors fail the stage and block normal review/publication; existing AI review is invalidated before execution. Tests that prove an exploit works should assert the observed loss and pass when it is reproduced. A remediation fixture passing does not repair the original audited contract.
 
-The workflow enables this stage when `risk-project` is set; otherwise dynamic testing is skipped. Run only trusted local suites: FFI and filesystem cheatcode permissions are disabled and credentials are removed from the test process, but Forge is not a complete network sandbox. This tool does not provide RPC endpoints, private keys, deploy contracts or broadcast transactions. A suite with explicit fork/RPC calls would need separate authorization and isolation. No live-chain penetration testing is included.
+The workflow enables this stage when `risk-project` is set; otherwise dynamic testing is skipped. Its risk stage runs before AI discovery, so tests for newly discovered candidates need a subsequent manual `risk` run or a project-specific workflow adjustment. Run only trusted local suites: FFI and filesystem cheatcode permissions are disabled and credentials are removed from the test process, but Forge is not a complete network sandbox. This tool does not provide RPC endpoints, private keys, deploy contracts or broadcast transactions. A suite with explicit fork/RPC calls would need separate authorization and isolation. No live-chain penetration testing is included.
 
 ## Report contents and publication
 
-The tool writes `report.json`, `report.md`, and `slither.log`. JSON contains source hashes/content, Git revision, dirty-checkout status, detector severity/confidence, source locations and AI review. AI adds a verdict, reasoning, exploit scenario, remediation, and validation steps. It does **not** silently remove Slither findings or promote its opinion into a proven exploit. This release reviews Slither findings; it does not independently search for vulnerabilities missed by Slither.
+The tool writes `report.json`, `report.md`, and `slither.log`. JSON contains source hashes/content, Git revision, dirty-checkout status, detector severity/confidence, source locations and AI review. AI discovery adds separate candidates with source-line evidence; AI review adds a verdict, reasoning, exploit scenario, remediation, and validation steps. The tool does **not** silently remove Slither findings or promote model opinion into a proven exploit.
 
-`publish` defaults to Medium and High findings, at most 20 selected findings. `--min-severity Low` includes Low findings; `--max-issues` changes the cap. Exceeding the cap fails before issue writes. Normal publication requires a complete AI review; `--allow-unreviewed` explicitly permits static-only candidates. Public destinations are blocked unless `--allow-public-destination` is supplied.
+`publish` defaults to Medium and High findings with a `likely-valid` AI verdict, at most 20 selected findings. `--min-severity Low` includes Low findings; `--verdict needs-review` or `--verdict all` changes review filtering; `--finding-id` selects one exact candidate; `--max-issues` changes the cap. Exceeding the cap fails before issue writes. Normal publication requires a complete AI review; `--allow-unreviewed` explicitly permits static-only candidates. Public destinations are blocked unless `--allow-public-destination` is supplied.
 
 Issues receive `security`, `slither-agent`, and `severity:*` labels. Each includes detector evidence, source locations, revision metadata and AI assessment. A deterministic fingerprint prevents duplicates for the same scope, detector, locations and evidence; source/line changes may create a new candidate. Open issues are updated when evidence changes; closed issues are left closed. Human labels are preserved. `publication.json` records created/updated/unchanged issue URLs. Run publishers serially per scope; the reusable workflow supplies concurrency control. Publication uses ordinary GitHub Issues, not Security Advisories or code-scanning alerts.
 

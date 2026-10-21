@@ -31,10 +31,24 @@ jobs:
               r = json.load(f)
           assert any(x['check'] == 'reentrancy-eth' and x['severity'] == 'High' for x in r['findings']), r
           assert not r['reviewed'] and not r['imported']
-          assert r['risk']['status'] == 'passed' and r['risk']['passed'] == 4
+          assert r['risk']['status'] == 'passed' and r['risk']['passed'] == 5
           assert len(r['risk']['untested_finding_ids']) == 1
           assert any(e['claim'] == 'exploit-reproduced' and e['status'] == 'Success' for e in r['risk']['evidence'])
           assert any(e['kind'].get('Fuzz', {}).get('runs') == 256 for e in r['risk']['evidence'])
+          PY
+      - name: Scan independent-discovery fixture with real Slither
+        run: ./bin/slither-agent audit --target examples/RewardPool.sol --scope example/reward-pool --ai none --solc-version 0.8.28 --out reports/reward-pool
+      - name: Reproduce reward claim exploit in local EVM
+        run: forge test --offline --match-contract RewardPoolRiskTest --use "$GITHUB_WORKSPACE/.slither-venv/.solc-select/artifacts/solc-0.8.28/solc-0.8.28"
+        working-directory: examples/risk
+      - name: Assert real reward-pool scan provenance
+        run: |
+          python3 - <<'PY'
+          import json
+          with open('reports/reward-pool/report.json') as f:
+              r = json.load(f)
+          assert r['imported'] is False and r['slither_version']
+          assert 'examples/RewardPool.sol' in r['sources']
           PY
       - uses: actions/upload-artifact@v4
         with:

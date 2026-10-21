@@ -18,6 +18,10 @@ on:
         description: Copilot model ID or auto
         type: string
         default: auto
+      discover:
+        description: Search audited source for new findings beyond Slither detectors
+        type: boolean
+        default: true
       risk-project:
         description: Optional trusted Foundry project path; empty skips dynamic testing
         type: string
@@ -42,7 +46,7 @@ on:
       agent-ref:
         description: Tool revision; pin to a reviewed commit for production
         type: string
-        default: v0.2.0
+        default: v0.3.0
     secrets:
       COPILOT_TOKEN:
         description: Optional PAT with Copilot Requests; needed for personal repositories
@@ -154,12 +158,22 @@ jobs:
       - run: |
           go build -trimpath -o bin/slither-agent ./cmd/slither-agent
           npm install -g @github/copilot@1.0.97
-      - name: Review Slither evidence with Copilot (no model tools)
+      - name: Discover source-level security candidates with Copilot
+        if: inputs.discover
         env:
           GITHUB_TOKEN: ${{ github.token }}
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_TOKEN }}
           MODEL: ${{ inputs.model }}
-        run: ./bin/slither-agent review --report scan-report/report.json --out reviewed-report --model "$MODEL"
+        run: ./bin/slither-agent discover --report scan-report/report.json --out reviewed-report --model "$MODEL"
+      - name: Review all findings with Copilot (no model tools)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_TOKEN }}
+          MODEL: ${{ inputs.model }}
+          DISCOVER: ${{ inputs.discover }}
+        run: |
+          if [ "$DISCOVER" = true ]; then report=reviewed-report/report.json; else report=scan-report/report.json; fi
+          ./bin/slither-agent review --report "$report" --out reviewed-report --model "$MODEL"
       - uses: actions/upload-artifact@v4
         with:
           name: reviewed-security-report

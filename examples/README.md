@@ -1,5 +1,11 @@
 # Example audit: VulnerableVault
 
+## Independent discovery example: RewardPool
+
+[RewardPool.sol](RewardPool.sol) is another intentionally vulnerable fixture. Its `claimFor` function calculates rewards for a beneficiary but reads and updates `lastClaimEpoch` for the caller. The live Copilot discovery pass identified this mismatch as a separate High-severity candidate. Eleven fresh callers can claim for the same beneficiary in one epoch. The [Foundry test](risk/test/RewardPoolRisk.t.sol) passes after paying 1.1 ETH from a pool with only 1 ETH of reward funding, leaving 0.9 ETH to back a 1 ETH stake; full stake withdrawal then fails. This is a local fixture proof, not a deployed-contract exploit.
+
+The [risk plan](risk/reward-plan.json) maps the discovery to that exact test. Run `audit --ai none`, `discover`, `risk`, then `review` on this fixture to reproduce the full pipeline. The committed report states whether Slither actually ran or whether its detector input was imported; keep that distinction when comparing the AI candidate with static analysis. Never deploy this fixture.
+
 This example runs real Slither against [VulnerableVault.sol](VulnerableVault.sol), an intentionally vulnerable ETH vault. The committed [Markdown report](reports/vulnerable-vault/report.md) and [JSON report](reports/vulnerable-vault/report.json) show the output from Slither 0.11.6 and Solidity 0.8.28.
 
 **Execution status:** static analysis, local EVM exploit/risk tests and live GPT-5.4 Copilot review completed; GitHub issue publication has not run. The walkthrough below explains the source code; it is not output from the Copilot review stage. Never deploy this fixture.

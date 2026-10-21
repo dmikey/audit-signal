@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = "0.2.1"
+const Version = "0.3.0"
 const SlitherVersion = "0.11.6"
 const SolcSelectVersion = "1.2.0"
 
@@ -35,6 +35,8 @@ func Run(ctx context.Context, args []string, w io.Writer) error {
 		return audit(ctx, args[1:], w)
 	case "review":
 		return reviewCommand(ctx, args[1:], w)
+	case "discover":
+		return discoverCommand(ctx, args[1:], w)
 	case "risk":
 		return riskCommand(ctx, args[1:], w)
 	case "publish":
@@ -50,6 +52,7 @@ Commands (use COMMAND --help for flags):
   setup    Install pinned Slither and solc-select into a local Python environment
   audit    Run Slither, bundle sources, optionally review with Copilot, save report
   review   AI-review an existing report using GitHub Copilot CLI
+  discover Search source for flaws that Slither may miss using GitHub Copilot CLI
   risk     Execute a mapped Foundry exploit/fuzz/risk test plan in a local EVM
   publish  Create/update deduplicated security issues from a reviewed report
   version  Print binary version
@@ -302,5 +305,34 @@ func reviewCommand(ctx context.Context, args []string, w io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(w, "Copilot reviewed %d findings; saved to %s\n", len(r.Findings), *out)
+	return nil
+}
+
+func discoverCommand(ctx context.Context, args []string, w io.Writer) error {
+	f := flags("discover", w)
+	path := f.String("report", "reports/report.json", "Input Slither report")
+	out := f.String("out", "reports", "Output directory")
+	model := f.String("model", "auto", "Copilot model ID")
+	copilot := f.String("copilot", "copilot", "Copilot CLI executable")
+	timeout := f.Duration("timeout", 10*time.Minute, "Discovery timeout")
+	if err := parse(f, args); err != nil {
+		return err
+	}
+	if *timeout <= 0 {
+		return fmt.Errorf("timeout must be positive")
+	}
+	r, err := loadReport(*path)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, *timeout)
+	defer cancel()
+	if err = discoverReport(ctx, &r, *copilot, *model); err != nil {
+		return err
+	}
+	if err = saveReport(*out, r); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "AI discovery complete: %d total findings; saved to %s\n", len(r.Findings), *out)
 	return nil
 }

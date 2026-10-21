@@ -85,14 +85,16 @@ func publishCommand(ctx context.Context, args []string, w io.Writer) error {
 	report := f.String("report", "reports/report.json", "Reviewed report JSON")
 	repo := f.String("repo", "", "Destination owner/repo (required)")
 	min := f.String("min-severity", "Medium", "High, Medium, Low, Informational or Optimization")
+	findingID := f.String("finding-id", "", "Publish only one exact finding ID")
+	verdict := f.String("verdict", "likely-valid", "AI verdict to publish: likely-valid, needs-review, or all")
 	cap := f.Int("max-issues", 20, "Maximum selected findings; excess fails before writing")
 	allowPublic := f.Bool("allow-public-destination", false, "Explicitly allow disclosure in a public repository")
 	allowUnreviewed := f.Bool("allow-unreviewed", false, "Explicitly publish Slither-only candidates")
 	if err := parse(f, args); err != nil {
 		return err
 	}
-	if !repoPattern.MatchString(*repo) || !validSeverity(*min) || *cap < 1 {
-		return fmt.Errorf("require --repo owner/repo, a valid --min-severity and positive --max-issues")
+	if !repoPattern.MatchString(*repo) || !validSeverity(*min) || *cap < 1 || (*verdict != "likely-valid" && *verdict != "needs-review" && *verdict != "all") {
+		return fmt.Errorf("require --repo owner/repo, a valid --min-severity, valid --verdict and positive --max-issues")
 	}
 	r, err := loadReport(*report)
 	if err != nil {
@@ -104,11 +106,9 @@ func publishCommand(ctx context.Context, args []string, w io.Writer) error {
 	if r.Risk != nil && r.Risk.Status != "passed" {
 		return fmt.Errorf("risk stage did not pass; publication blocked")
 	}
-	selected := []Finding{}
-	for _, finding := range r.Findings {
-		if rank(finding.Severity) >= rank(*min) {
-			selected = append(selected, finding)
-		}
+	selected, err := selectFindings(r, *min, *findingID, *verdict)
+	if err != nil {
+		return err
 	}
 	if len(selected) > *cap {
 		return fmt.Errorf("%d findings exceed --max-issues %d; no issues written", len(selected), *cap)
@@ -139,6 +139,23 @@ func publishCommand(ctx context.Context, args []string, w io.Writer) error {
 		fmt.Fprintf(w, "%s %s\n", p.Action, p.URL)
 	}
 	return err
+}
+
+func selectFindings(r Report, min, findingID, verdict string) ([]Finding, error) {
+	selected := []Finding{}
+	for _, finding := range r.Findings {
+		if rank(finding.Severity) < rank(min) || (findingID != "" && finding.ID != findingID) {
+			continue
+		}
+		if r.Reviewed && verdict != "all" && (finding.Review == nil || finding.Review.Verdict != verdict) {
+			continue
+		}
+		selected = append(selected, finding)
+	}
+	if findingID != "" && len(selected) == 0 {
+		return nil, fmt.Errorf("finding ID not found or filtered by severity/verdict")
+	}
+	return selected, nil
 }
 
 func (c *githubClient) publish(ctx context.Context, repo string, r Report, findings []Finding, allowPublic bool) ([]Publication, error) {
