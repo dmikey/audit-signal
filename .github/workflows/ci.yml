@@ -5,6 +5,34 @@ on:
 permissions:
   contents: read
 jobs:
+  action-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Run installable action against vulnerable fixture
+        id: audit
+        uses: ./
+        with:
+          target: examples/VulnerableVault.sol
+          scope: example/action-vault
+          ai: none
+          solc-version: '0.8.28'
+      - name: Assert action output and real Slither finding
+        env:
+          REPORT_JSON: ${{ steps.audit.outputs.report-json }}
+          REPORT_MARKDOWN: ${{ steps.audit.outputs.report-markdown }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          with open(os.environ['REPORT_JSON']) as f:
+              report = json.load(f)
+          assert os.path.isfile(os.environ['REPORT_MARKDOWN'])
+          assert report['scope'] == 'example/action-vault'
+          assert report['reviewed'] is False
+          assert any(f['check'] == 'reentrancy-eth' and f['severity'] == 'High' for f in report['findings'])
+          PY
   test:
     runs-on: ubuntu-latest
     steps:

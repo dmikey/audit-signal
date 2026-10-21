@@ -62,6 +62,42 @@ AI review consumes a bounded source bundle (48 KB by default). It excludes vendo
 
 ## Use in GitHub CI/CD
 
+### One-step installable action
+
+After checkout, add `uses: dmikey/slither-agent@v0.6.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. A static audit needs no model key:
+
+```yaml
+name: Smart contract audit
+on: [workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: scan
+        uses: dmikey/slither-agent@v0.6.0
+        with:
+          target: '.'
+          solc-version: '0.8.28'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: |
+            ${{ steps.scan.outputs.report-json }}
+            ${{ steps.scan.outputs.report-markdown }}
+          retention-days: 1
+```
+
+To add AI review, set `ai: review`, `discover: 'true'`, `provider`, and `model` on the action step. Supply the matching secret through `with`, for example `openai-api-key: ${{ secrets.OPENAI_API_KEY }}` or `anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}`. For Copilot, grant `copilot-requests: write` in the workflow permissions and optionally set `copilot-token: ${{ secrets.COPILOT_TOKEN }}`. Secrets are supplied only to the selected AI steps, after the static scan. Do not place provider keys in job-level `env`, where dependency setup would inherit them. Install any trusted Foundry/Hardhat dependencies in a step before the action.
+
+This action writes reports to the runner's temporary directory and does not publish issues. Use the reusable workflow below when you need isolated jobs for risk tests, AI review, and issue publication. Its jobs keep model credentials away from project setup and give issue-write permission only to the publisher. GitHub [distinguishes composite actions from reusable workflows](https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#composite-actions-and-reusable-workflows).
+
+### Full reusable workflow
+
 **GitHub Models retired July 30, 2026.** Use [Copilot CLI in Actions](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli-in-actions) instead of the old `models: read` inference API.
 
 For organization repositories, enable **Allow use of Copilot CLI billed to the organization** and grant `copilot-requests: write`. The workflow can then use `GITHUB_TOKEN`; no separate model key or PAT is required. AI credits are billed to the organization. For personal repositories or organizations without that policy, create a fine-grained PAT with **Copilot Requests** and store it as `COPILOT_TOKEN`. This uses the user's Copilot access and billing. See [GitHub's authentication options](https://docs.github.com/en/copilot/how-tos/copilot-cli/automate-copilot-cli/automate-with-actions).
@@ -78,7 +114,7 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.5.0
+    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.6.0
     with:
       target: '.'
       solc-version: '0.8.28'
@@ -103,11 +139,11 @@ For a provider key, add `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` under the **priv
 ```yaml
 jobs:
   audit:
-    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.5.0
+    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.6.0
     with:
       provider: openai # or anthropic
       model: YOUR_PROVIDER_MODEL_ID
-      agent-ref: v0.5.0
+      agent-ref: v0.6.0
       target: '.'
       publish: false
     secrets:

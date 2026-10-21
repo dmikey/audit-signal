@@ -54,7 +54,7 @@ on:
       agent-ref:
         description: Tool revision; pin to a reviewed commit for production
         type: string
-        default: v0.5.0
+        default: v0.6.0
     secrets:
       COPILOT_TOKEN:
         description: Optional PAT with Copilot Requests; needed for personal repositories

@@ -1,0 +1,156 @@
+name: Slither Agent
+description: Install Slither Agent and audit the caller repository with Slither and optional AI review
+branding:
+  icon: shield
+  color: purple
+inputs:
+  target:
+    description: Contract file or project directory relative to the caller checkout
+    default: '.'
+  scope:
+    description: Stable finding identity; defaults to repository and target path
+    default: ''
+  solc-version:
+    description: Solidity compiler version to install
+    default: '0.8.28'
+  ai:
+    description: none or review; static-only scanning works without a model credential
+    default: none
+  discover:
+    description: Search for additional source-level candidates before AI review
+    default: 'false'
+  provider:
+    description: copilot, openai, or anthropic
+    default: copilot
+  model:
+    description: Provider model ID; auto is supported only for Copilot
+    default: auto
+  copilot-token:
+    description: Optional Copilot PAT stored in GitHub Actions secrets
+    default: ''
+  openai-api-key:
+    description: OpenAI API key stored in GitHub Actions secrets
+    default: ''
+  anthropic-api-key:
+    description: Anthropic API key stored in GitHub Actions secrets
+    default: ''
+  max-source-bytes:
+    description: Maximum bundled source bytes; oversized input fails
+    default: '48000'
+outputs:
+  report-json:
+    description: Absolute path to the machine-readable report
+    value: ${{ steps.report.outputs.report-json }}
+  report-markdown:
+    description: Absolute path to the human-readable report
+    value: ${{ steps.report.outputs.report-markdown }}
+runs:
+  using: composite
+  steps:
+    - name: Check runner and inputs
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+        AI: ${{ inputs.ai }}
+        DISCOVER: ${{ inputs.discover }}
+        PROVIDER: ${{ inputs.provider }}
+        MODEL: ${{ inputs.model }}
+      run: |
+        set -euo pipefail
+        if [[ "$RUNNER_OS" != Linux && "$RUNNER_OS" != macOS ]]; then
+          echo 'Slither Agent action supports Linux and macOS runners.' >&2
+          exit 1
+        fi
+        if [[ "$AI" != none && "$AI" != review ]]; then
+          echo 'ai must be none or review.' >&2
+          exit 1
+        fi
+        if [[ "$DISCOVER" != true && "$DISCOVER" != false ]]; then
+          echo 'discover must be true or false.' >&2
+          exit 1
+        fi
+        if [[ "$DISCOVER" == true && "$AI" != review ]]; then
+          echo 'discover requires ai: review.' >&2
+          exit 1
+        fi
+        if [[ "$AI" == review ]]; then
+          case "$PROVIDER" in copilot|openai|anthropic) ;; *) echo 'Unsupported AI provider.' >&2; exit 1 ;; esac
+          if [[ "$PROVIDER" != copilot && "$MODEL" == auto ]]; then
+            echo 'Specify a model ID for this provider.' >&2
+            exit 1
+          fi
+        fi
+        if [[ -z "$TARGET" ]]; then echo 'target cannot be empty.' >&2; exit 1; fi
+        work="$(mktemp -d "$RUNNER_TEMP/slither-agent.XXXXXX")"
+        {
+          echo "SLITHER_AGENT_BIN=$work/slither-agent"
+          echo "SLITHER_AGENT_VENV=$work/venv"
+          echo "SLITHER_AGENT_REPORT=$work/report"
+        } >> "$GITHUB_ENV"
+    - uses: actions/setup-go@v6
+      with:
+        go-version: '1.24.x'
+        cache: false
+    - uses: astral-sh/setup-uv@v7
+    - uses: actions/setup-node@v6
+      if: inputs.ai == 'review' && inputs.provider == 'copilot'
+      with:
+        node-version: '26.12.1'
+    - name: Build scanner and install Slither
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        SOLC_VERSION: ${{ inputs.solc-version }}
+      run: |
+        set -euo pipefail
+        (cd "$ACTION_PATH" && go build -trimpath -o "$SLITHER_AGENT_BIN" ./cmd/slither-agent)
+        "$SLITHER_AGENT_BIN" setup --venv "$SLITHER_AGENT_VENV" --solc-version "$SOLC_VERSION"
+    - name: Install Copilot CLI
+      if: inputs.ai == 'review' && inputs.provider == 'copilot'
+      shell: bash
+      run: npm install -g @github/copilot@1.0.97
+    - name: Scan contracts with Slither
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+        SCOPE: ${{ inputs.scope }}
+        SOLC_VERSION: ${{ inputs.solc-version }}
+        MAX_SOURCE_BYTES: ${{ inputs.max-source-bytes }}
+      run: |
+        set -euo pipefail
+        if [[ -z "$SCOPE" ]]; then SCOPE="$GITHUB_REPOSITORY:$TARGET"; fi
+        "$SLITHER_AGENT_BIN" audit --target "$TARGET" --scope "$SCOPE" \
+          --ai none --venv "$SLITHER_AGENT_VENV" --solc-version "$SOLC_VERSION" \
+          --max-source-bytes "$MAX_SOURCE_BYTES" --out "$SLITHER_AGENT_REPORT"
+    - name: Discover source-level security candidates
+      if: inputs.ai == 'review' && inputs.discover == 'true'
+      shell: bash
+      env:
+        PROVIDER: ${{ inputs.provider }}
+        MODEL: ${{ inputs.model }}
+        GITHUB_TOKEN: ${{ inputs.provider == 'copilot' && github.token || '' }}
+        COPILOT_GITHUB_TOKEN: ${{ inputs.provider == 'copilot' && inputs.copilot-token || '' }}
+        OPENAI_API_KEY: ${{ inputs.provider == 'openai' && inputs.openai-api-key || '' }}
+        ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && inputs.anthropic-api-key || '' }}
+      run: |
+        "$SLITHER_AGENT_BIN" discover --report "$SLITHER_AGENT_REPORT/report.json" \
+          --out "$SLITHER_AGENT_REPORT" --provider "$PROVIDER" --model "$MODEL"
+    - name: Review findings with AI
+      if: inputs.ai == 'review'
+      shell: bash
+      env:
+        PROVIDER: ${{ inputs.provider }}
+        MODEL: ${{ inputs.model }}
+        GITHUB_TOKEN: ${{ inputs.provider == 'copilot' && github.token || '' }}
+        COPILOT_GITHUB_TOKEN: ${{ inputs.provider == 'copilot' && inputs.copilot-token || '' }}
+        OPENAI_API_KEY: ${{ inputs.provider == 'openai' && inputs.openai-api-key || '' }}
+        ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && inputs.anthropic-api-key || '' }}
+      run: |
+        "$SLITHER_AGENT_BIN" review --report "$SLITHER_AGENT_REPORT/report.json" \
+          --out "$SLITHER_AGENT_REPORT" --provider "$PROVIDER" --model "$MODEL"
+    - name: Expose report paths
+      id: report
+      shell: bash
+      run: |
+        echo "report-json=$SLITHER_AGENT_REPORT/report.json" >> "$GITHUB_OUTPUT"
+        echo "report-markdown=$SLITHER_AGENT_REPORT/report.md" >> "$GITHUB_OUTPUT"
