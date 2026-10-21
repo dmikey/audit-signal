@@ -4,9 +4,9 @@ Scope: `example/vault`
 
 Revision: `23ca3cbce01ecd02c888bc686009aa94daa1b52e` (dirty: false)
 
-Slither: `0.11.6`; AI model: ``; AI reviewed: false; imported: false
+Slither: `0.11.6`; AI model: ``; AI reviewed: false; AI discovery: false; discovery model: ``; imported: false
 
-Automated findings require human validation. This is not proof of exploitability or a complete security audit. AI source coverage: 1 files; dependency/vendor directories are excluded.
+Automated findings require human validation. Executed risk tests establish only recorded local harness outcomes, not production safety or a complete security audit. AI source coverage: 1 files; dependency/vendor directories are excluded.
 
 2 findings
 
@@ -19,7 +19,14 @@ Automated findings require human validation. This is not proof of exploitability
 
 **Status:** automated candidate; requires human validation.
 
-### Detector evidence
+### Evidence layers
+
+- **Detection:** `slither` `0.11.6` reported `reentrancy-eth` (detected).
+- **Dynamic testing:** not-run.
+
+A detector hit, AI assessment, and passing local test are distinct evidence. A test result supports only its recorded assertion and plan claim.
+
+### Source evidence
 
 Reentrancy in VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17):
 	External calls:
@@ -49,7 +56,14 @@ Reentrancy in VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17):
 
 **Status:** automated candidate; requires human validation.
 
-### Detector evidence
+### Evidence layers
+
+- **Detection:** `slither` `0.11.6` reported `low-level-calls` (detected).
+- **Dynamic testing:** not-run.
+
+A detector hit, AI assessment, and passing local test are distinct evidence. A test result supports only its recorded assertion and plan claim.
+
+### Source evidence
 
 Low level call in VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17):
 	- (ok,None) = msg.sender.call{value: amount}() (examples/VulnerableVault.sol#14)

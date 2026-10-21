@@ -4,7 +4,7 @@ Scope: `example/vault`
 
 Revision: `56129417d7f69eceaff249a294afa793f3f23354` (dirty: false)
 
-Slither: `0.11.6`; AI model: `gpt-5.4`; AI reviewed: true; imported: false
+Slither: `0.11.6`; AI model: `gpt-5.4`; AI reviewed: true; AI discovery: false; discovery model: ``; imported: false
 
 Automated findings require human validation. Executed risk tests establish only recorded local harness outcomes, not production safety or a complete security audit. AI source coverage: 1 files; dependency/vendor directories are excluded.
 
@@ -57,7 +57,18 @@ Evidence applies to assertions in the recorded local test harness. A passing rem
 
 **Status:** automated candidate; requires human validation.
 
-### Detector evidence
+### Evidence layers
+
+- **Detection:** `slither` `0.11.6` reported `reentrancy-eth` (detected).
+- **Review:** `copilot` model `gpt-5.4` assessed this as **likely-valid**.
+- **Dynamic testing:** `foundry` `forge Version: 1.8.5` ran `test/VaultRisk.t.sol:VaultRiskTest:test_ReentrancyDrainsVictimFunds()` — **Success**; plan claim: **exploit-reproduced**.
+- **Dynamic testing:** `foundry` `forge Version: 1.8.5` ran `test/VaultRisk.t.sol:VaultRiskTest:test_FixedVaultBlocksSameAttack()` — **Success**; plan claim: **mitigation-holds**.
+- **Dynamic testing:** `foundry` `forge Version: 1.8.5` ran `test/VaultRisk.t.sol:VaultRiskTest:test_FailedTransferRestoresCredit()` — **Success**; plan claim: **risk-property**.
+- **Dynamic testing:** `foundry` `forge Version: 1.8.5` ran `test/VaultRisk.t.sol:VaultRiskTest:testFuzz_FixedVaultPreservesVictimFunds(uint96,uint8)` — **Success**; plan claim: **risk-property**.
+
+A detector hit, AI assessment, and passing local test are distinct evidence. A test result supports only its recorded assertion and plan claim.
+
+### Source evidence
 
 Reentrancy in VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17):
 	External calls:
@@ -143,7 +154,15 @@ Evidence applies to assertions in the recorded local test harness. A passing rem
 
 **Status:** automated candidate; requires human validation.
 
-### Detector evidence
+### Evidence layers
+
+- **Detection:** `slither` `0.11.6` reported `low-level-calls` (detected).
+- **Review:** `copilot` model `gpt-5.4` assessed this as **likely-false-positive**.
+- **Dynamic testing:** unmapped.
+
+A detector hit, AI assessment, and passing local test are distinct evidence. A test result supports only its recorded assertion and plan claim.
+
+### Source evidence
 
 Low level call in VulnerableVault.withdraw() (examples/VulnerableVault.sol#12-17):
 	- (ok,None) = msg.sender.call{value: amount}() (examples/VulnerableVault.sol#14)

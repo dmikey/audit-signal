@@ -43,6 +43,11 @@ jobs:
           assert len(r['risk']['untested_finding_ids']) == 1
           assert any(e['claim'] == 'exploit-reproduced' and e['status'] == 'Success' for e in r['risk']['evidence'])
           assert any(e['kind'].get('Fuzz', {}).get('runs') == 256 for e in r['risk']['evidence'])
+          reentrancy = next(x for x in r['findings'] if x['check'] == 'reentrancy-eth')
+          layers = reentrancy['evidence_layers']
+          assert layers[0]['stage'] == 'detection' and layers[0]['tool'] == 'slither'
+          assert all(x['stage'] != 'review' for x in layers)
+          assert any(x['stage'] == 'dynamic-test' and x['tool'] == 'foundry' and x['status'] == 'Success' and x['claim'] == 'exploit-reproduced' for x in layers)
           PY
       - name: Scan independent-discovery fixture with real Slither
         run: ./bin/slither-agent audit --target examples/RewardPool.sol --scope example/reward-pool --ai none --solc-version 0.8.28 --out reports/reward-pool
@@ -57,6 +62,7 @@ jobs:
               r = json.load(f)
           assert r['imported'] is False and r['slither_version']
           assert 'examples/RewardPool.sol' in r['sources']
+          assert all(x['evidence_layers'][0]['tool'] == 'slither' and x['evidence_layers'][-1]['status'] == 'not-run' for x in r['findings'])
           PY
       - uses: actions/upload-artifact@v4
         with:

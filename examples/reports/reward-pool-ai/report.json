@@ -40,7 +40,31 @@
         "exploit_scenario": "After the owner advances at least one epoch, a beneficiary holding shares coordinates multiple fresh addresses. Each address calls claimFor(beneficiary), independently computes missed from its own zero checkpoint, and adds rewards based on the beneficiary's unchanged shares. The beneficiary then calls withdrawRewards and can drain reward funding and deposited principal. No privileged caller or reentrancy is required.",
         "remediation": "Use lastClaimEpoch[beneficiary] for both the missed-epoch calculation and checkpoint update. If permissionless claiming is unnecessary, additionally require msg.sender == beneficiary or explicit beneficiary authorization. Apply checks-effects-interactions and ensure reward liabilities are reserve-backed.",
         "validation": "Repeat the supplied exploit with one beneficiary and multiple fresh callers, asserting that only the first claim increases rewardCredit and later calls cannot credit the same epochs. Also test claims before and after share-balance changes and confirm stake principal remains withdrawable."
-      }
+      },
+      "evidence_layers": [
+        {
+          "stage": "discovery",
+          "tool": "copilot",
+          "model": "gpt-5.6-sol",
+          "status": "candidate",
+          "check": "ai-caller-beneficiary-claim-state-mismatch"
+        },
+        {
+          "stage": "review",
+          "tool": "copilot",
+          "model": "gpt-5.6-sol",
+          "status": "likely-valid"
+        },
+        {
+          "stage": "dynamic-test",
+          "tool": "foundry",
+          "version": "forge Version: 1.8.5",
+          "status": "Success",
+          "suite": "test/RewardPoolRisk.t.sol:RewardPoolRiskTest",
+          "test": "test_FreshCallersExhaustReservesAndLockStake()",
+          "claim": "exploit-reproduced"
+        }
+      ]
     },
     {
       "id": "9dc60d29f1884222aa364fd581d68d59feb6481c5e0cf55866a8f22edcf5a72a",
@@ -70,7 +94,26 @@
         "exploit_scenario": "The owner advances one or more epochs before an attacker deposits. The attacker deposits 1 ether, receives one share, and immediately calls claimFor(attacker). Because its checkpoint remains zero, the contract credits REWARD_PER_SHARE multiplied by all elapsed epochs, including periods before the attacker held a share. Profit requires sufficient contract liquidity and rewards exceeding relevant costs.",
         "remediation": "Use a cumulative reward-per-share index and settle each account's accrued rewards before every deposit or withdrawal, then update its reward debt for the new balance. At minimum, initialize a first-time depositor's checkpoint to the current epoch, though checkpoint-only accounting must also correctly handle later deposits and partial withdrawals.",
         "validation": "Advance several epochs with no attacker stake, then deposit and claim from a fresh address; assert that no pre-deposit rewards are credited. Also test additional deposits and partial withdrawals after accrual to ensure only shares held during each interval earn rewards."
-      }
+      },
+      "evidence_layers": [
+        {
+          "stage": "discovery",
+          "tool": "copilot",
+          "model": "gpt-5.6-sol",
+          "status": "candidate",
+          "check": "ai-retroactive-reward-accrual"
+        },
+        {
+          "stage": "review",
+          "tool": "copilot",
+          "model": "gpt-5.6-sol",
+          "status": "likely-valid"
+        },
+        {
+          "stage": "dynamic-test",
+          "status": "unmapped"
+        }
+      ]
     },
     {
       "id": "e872d62ca1771d91a7b69046d17f76ffb89862b6eb4de83829c7996e14b9135c",
@@ -100,7 +143,26 @@
         "exploit_scenario": "Users deposit stake, creating principal liabilities. Reward credits accrue while dedicated reward funding is absent or insufficient. A credited account withdraws rewards from the undifferentiated contract balance, consuming ether backing outstanding shares. A later shareholder's withdrawStake call then fails for insufficient balance, rolling back that withdrawal and locking the affected principal until the pool is replenished.",
         "remediation": "Track total principal liabilities and a separate available reward reserve. Increase the reward reserve only through explicit reward funding, require every reward payment to be covered by that reserve, and decrement it on payment. Alternatively, isolate principal and rewards in separate accounting contracts or vaults. Ensure accrued reward liabilities cannot exceed funded reserves.",
         "validation": "Create multiple shares, accrue a valid reward credit larger than explicitly funded rewards, and attempt reward withdrawal. Assert that it reverts before touching principal or that the post-withdrawal balance remains at least 1 ether times total outstanding shares. Then verify every shareholder can withdraw principal."
-      }
+      },
+      "evidence_layers": [
+        {
+          "stage": "discovery",
+          "tool": "copilot",
+          "model": "gpt-5.6-sol",
+          "status": "candidate",
+          "check": "ai-principal-reward-accounting-mingling"
+        },
+        {
+          "stage": "review",
+          "tool": "copilot",
+          "model": "gpt-5.6-sol",
+          "status": "likely-valid"
+        },
+        {
+          "stage": "dynamic-test",
+          "status": "unmapped"
+        }
+      ]
     },
     {
       "id": "018dc0e61b579383df90e27f45aad6250c3fcb563754e4e640ea8621d907b223",
@@ -136,7 +198,26 @@
         "exploit_scenario": "A malicious recipient can execute arbitrary fallback logic during the call, but reentering withdrawRewards cannot recover the same credit because it has already been zeroed. Other public functions do not provide an evident reentrant path to restore that credit. Reentrancy could matter if future code introduces cross-function state dependencies, but no current exploit is demonstrated from this call alone.",
         "remediation": "No vulnerability-specific change is required for the call as currently ordered. For defense in depth, retain checks-effects-interactions, consider a reentrancy guard around withdrawal entry points, and optionally use a reviewed address-send helper while still checking failure. Fix the independent reward-accounting and reserve issues separately.",
         "validation": "Use a receiver contract whose fallback reenters withdrawRewards and other withdrawal functions, asserting that it cannot withdraw more than its legitimate balances. Also test a receiver that reverts, confirming the entire transaction rolls back and rewardCredit remains available for a later successful withdrawal."
-      }
+      },
+      "evidence_layers": [
+        {
+          "stage": "detection",
+          "tool": "slither",
+          "version": "0.11.6",
+          "status": "detected",
+          "check": "low-level-calls"
+        },
+        {
+          "stage": "review",
+          "tool": "copilot",
+          "model": "gpt-5.6-sol",
+          "status": "likely-false-positive"
+        },
+        {
+          "stage": "dynamic-test",
+          "status": "unmapped"
+        }
+      ]
     },
     {
       "id": "1d877563d62479f37c4a2267954f7265d32f9f22a177f727907da1457314bfea",
@@ -171,7 +252,26 @@
         "exploit_scenario": "A malicious shareholder's fallback can reenter withdrawStake. Each successful nested invocation requires and consumes another share, so the caller cannot receive more than 1 ether per recorded share. Insolvency may make the call fail, but that results from principal/reward commingling rather than the low-level call primitive.",
         "remediation": "No security fix is necessary solely for this call under the current state ordering. For defense in depth and resilience to future cross-function changes, add a reentrancy guard to withdrawal functions while preserving the pre-call share decrement and checked call result. Address reserve segregation independently.",
         "validation": "Test malicious receivers holding one and multiple shares that recursively call withdrawStake and withdrawRewards. Assert that total stake payments never exceed 1 ether per consumed share, state is correct after nested calls, and a reverting receiver causes full rollback."
-      }
+      },
+      "evidence_layers": [
+        {
+          "stage": "detection",
+          "tool": "slither",
+          "version": "0.11.6",
+          "status": "detected",
+          "check": "low-level-calls"
+        },
+        {
+          "stage": "review",
+          "tool": "copilot",
+          "model": "gpt-5.6-sol",
+          "status": "likely-false-positive"
+        },
+        {
+          "stage": "dynamic-test",
+          "status": "unmapped"
+        }
+      ]
     }
   ],
   "sources": {

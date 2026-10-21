@@ -40,7 +40,20 @@
           ]
         }
       ],
-      "origin": "slither"
+      "origin": "slither",
+      "evidence_layers": [
+        {
+          "stage": "detection",
+          "tool": "slither",
+          "version": "0.11.6",
+          "status": "detected",
+          "check": "reentrancy-eth"
+        },
+        {
+          "stage": "dynamic-test",
+          "status": "not-run"
+        }
+      ]
     },
     {
       "id": "837afa4c26de785758112cebadfdb5ee411b54085c94bbcbb7030d9438668faa",
@@ -67,7 +80,20 @@
           ]
         }
       ],
-      "origin": "slither"
+      "origin": "slither",
+      "evidence_layers": [
+        {
+          "stage": "detection",
+          "tool": "slither",
+          "version": "0.11.6",
+          "status": "detected",
+          "check": "low-level-calls"
+        },
+        {
+          "stage": "dynamic-test",
+          "status": "not-run"
+        }
+      ]
     }
   ],
   "sources": {

@@ -32,6 +32,14 @@ Evidence applies to assertions in the recorded local test harness. A passing rem
 
 **Status:** automated candidate; requires human validation.
 
+### Evidence layers
+
+- **Discovery:** `copilot` model `gpt-5.6-sol` proposed `ai-caller-beneficiary-claim-state-mismatch` as a candidate.
+- **Review:** `copilot` model `gpt-5.6-sol` assessed this as **likely-valid**.
+- **Dynamic testing:** `foundry` `forge Version: 1.8.5` ran `test/RewardPoolRisk.t.sol:RewardPoolRiskTest:test_FreshCallersExhaustReservesAndLockStake()` — **Success**; plan claim: **exploit-reproduced**.
+
+A detector hit, AI assessment, and passing local test are distinct evidence. A test result supports only its recorded assertion and plan claim.
+
 ### Source evidence
 
 Sybil callers can multiply one beneficiary's rewards: Reward accrual uses the beneficiary's shares but calculates and records claimed epochs under msg.sender. A beneficiary can therefore have arbitrarily many fresh addresses call claimFor for the same beneficiary, crediting the same epochs repeatedly and draining the pool.
@@ -90,6 +98,14 @@ Evidence applies to assertions in the recorded local test harness. A passing rem
 
 **Status:** automated candidate; requires human validation.
 
+### Evidence layers
+
+- **Discovery:** `copilot` model `gpt-5.6-sol` proposed `ai-retroactive-reward-accrual` as a candidate.
+- **Review:** `copilot` model `gpt-5.6-sol` assessed this as **likely-valid**.
+- **Dynamic testing:** unmapped.
+
+A detector hit, AI assessment, and passing local test are distinct evidence. A test result supports only its recorded assertion and plan claim.
+
 ### Source evidence
 
 New shares receive rewards for past epochs: The credit calculation multiplies the beneficiary's current share balance by every epoch missed since the caller's checkpoint, without tracking when those shares were acquired. A user can deposit after epochs have elapsed and immediately claim rewards for periods in which no stake was held.
@@ -142,6 +158,14 @@ Evidence applies to assertions in the recorded local test harness. A passing rem
 **Scope:** `example/reward-pool` · **Revision:** `61e5b8f370758105ec3649088664dbce6516d085` · **Dirty:** false · **Imported:** false
 
 **Status:** automated candidate; requires human validation.
+
+### Evidence layers
+
+- **Discovery:** `copilot` model `gpt-5.6-sol` proposed `ai-principal-reward-accounting-mingling` as a candidate.
+- **Review:** `copilot` model `gpt-5.6-sol` assessed this as **likely-valid**.
+- **Dynamic testing:** unmapped.
+
+A detector hit, AI assessment, and passing local test are distinct evidence. A test result supports only its recorded assertion and plan claim.
 
 ### Source evidence
 
@@ -196,6 +220,14 @@ Evidence applies to assertions in the recorded local test harness. A passing rem
 
 **Status:** automated candidate; requires human validation.
 
+### Evidence layers
+
+- **Detection:** `slither` `0.11.6` reported `low-level-calls` (detected).
+- **Review:** `copilot` model `gpt-5.6-sol` assessed this as **likely-false-positive**.
+- **Dynamic testing:** unmapped.
+
+A detector hit, AI assessment, and passing local test are distinct evidence. A test result supports only its recorded assertion and plan claim.
+
 ### Source evidence
 
 Low level call in RewardPool.withdrawRewards() (examples/RewardPool.sol#41-47):
@@ -243,6 +275,14 @@ Evidence applies to assertions in the recorded local test harness. A passing rem
 **Scope:** `example/reward-pool` · **Revision:** `61e5b8f370758105ec3649088664dbce6516d085` · **Dirty:** false · **Imported:** false
 
 **Status:** automated candidate; requires human validation.
+
+### Evidence layers
+
+- **Detection:** `slither` `0.11.6` reported `low-level-calls` (detected).
+- **Review:** `copilot` model `gpt-5.6-sol` assessed this as **likely-false-positive**.
+- **Dynamic testing:** unmapped.
+
+A detector hit, AI assessment, and passing local test are distinct evidence. A test result supports only its recorded assertion and plan claim.
 
 ### Source evidence
 

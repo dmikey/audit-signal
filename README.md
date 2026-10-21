@@ -69,7 +69,7 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.3.0
+    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.4.0
     with:
       target: '.'
       solc-version: '0.8.28'
@@ -113,7 +113,9 @@ The workflow enables this stage when `risk-project` is set; otherwise dynamic te
 
 ## Report contents and publication
 
-The tool writes `report.json`, `report.md`, and `slither.log`. JSON contains source hashes/content, Git revision, dirty-checkout status, detector severity/confidence, source locations and AI review. AI discovery adds separate candidates with source-line evidence; AI review adds a verdict, reasoning, exploit scenario, remediation, and validation steps. The tool does **not** silently remove Slither findings or promote model opinion into a proven exploit.
+The tool writes `report.json`, `report.md`, and `slither.log`. JSON contains source hashes/content, Git revision, dirty-checkout status, detector severity/confidence, source locations and AI review. Each finding also has derived `evidence_layers`: detection or discovery tool and version/model, separate AI review verdict, and each mapped Foundry test with its status and plan claim. `not-run` means no dynamic stage ran; `unmapped` means a successful dynamic stage had no test mapped to that finding; `no-executed-evidence` means the dynamic stage failed before that finding gained test evidence. Imported Slither output is marked `imported`, not reported as a direct scan. AI discovery adds separate candidates with source-line evidence; AI review adds a verdict, reasoning, exploit scenario, remediation, and validation steps. The tool does **not** silently remove Slither findings or promote model opinion or a passing test into a proven production exploit. The layer records are derived from the report's original evidence and checked when loading; future engines can use the same stage/tool distinction.
+
+Use `slither-agent render --report path/to/report.json` to add the layer view to an existing report without running Slither, Copilot or Foundry again. It rewrites `report.json` and `report.md` beside the input unless `--out` selects another directory.
 
 `publish` defaults to Medium and High findings with a `likely-valid` AI verdict, at most 20 selected findings. `--min-severity Low` includes Low findings; `--verdict needs-review` or `--verdict all` changes review filtering; `--finding-id` selects one exact candidate; `--max-issues` changes the cap. Exceeding the cap fails before issue writes. Normal publication requires a complete AI review; `--allow-unreviewed` explicitly permits static-only candidates. Public destinations are blocked unless `--allow-public-destination` is supplied.
 

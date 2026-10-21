@@ -49,7 +49,58 @@
         "exploit_scenario": "Preconditions: the vault holds ETH from other users and the attacker’s address is a contract with a payable fallback/receive function. Attack sequence: the attacker deposits a small amount, calls withdraw(), receives the first call{value: amount}, reenters withdraw() from the fallback before line 16 executes, and repeats until the vault’s pooled ETH is drained or gas runs out. Because balances[msg.sender] is not cleared until after the external call returns, each nested withdrawal observes the same credited amount.",
         "remediation": "Apply checks-effects-interactions: set balances[msg.sender] = 0 before the external call, then send ETH; if the transfer fails, revert so the whole transaction rolls back. Optionally add a reentrancy guard (for example, nonReentrant) as defense in depth. Keep the failure path explicit so user credit is not silently lost.",
         "validation": "Confirm on the vulnerable source by executing a reentrancy test that deposits victim funds and demonstrates repeated nested withdrawals. After the fix, run a separate negative test showing the same attacker can recover only its own credited amount, plus a failure-path test proving a rejected transfer reverts without burning credit."
-      }
+      },
+      "evidence_layers": [
+        {
+          "stage": "detection",
+          "tool": "slither",
+          "version": "0.11.6",
+          "status": "detected",
+          "check": "reentrancy-eth"
+        },
+        {
+          "stage": "review",
+          "tool": "copilot",
+          "model": "gpt-5.4",
+          "status": "likely-valid"
+        },
+        {
+          "stage": "dynamic-test",
+          "tool": "foundry",
+          "version": "forge Version: 1.8.5",
+          "status": "Success",
+          "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+          "test": "test_ReentrancyDrainsVictimFunds()",
+          "claim": "exploit-reproduced"
+        },
+        {
+          "stage": "dynamic-test",
+          "tool": "foundry",
+          "version": "forge Version: 1.8.5",
+          "status": "Success",
+          "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+          "test": "test_FixedVaultBlocksSameAttack()",
+          "claim": "mitigation-holds"
+        },
+        {
+          "stage": "dynamic-test",
+          "tool": "foundry",
+          "version": "forge Version: 1.8.5",
+          "status": "Success",
+          "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+          "test": "test_FailedTransferRestoresCredit()",
+          "claim": "risk-property"
+        },
+        {
+          "stage": "dynamic-test",
+          "tool": "foundry",
+          "version": "forge Version: 1.8.5",
+          "status": "Success",
+          "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+          "test": "testFuzz_FixedVaultPreservesVictimFunds(uint96,uint8)",
+          "claim": "risk-property"
+        }
+      ]
     },
     {
       "id": "837afa4c26de785758112cebadfdb5ee411b54085c94bbcbb7030d9438668faa",
@@ -84,7 +135,26 @@
         "exploit_scenario": "No distinct exploit is demonstrated solely from using call here. An attacker benefits only because the contract calls out before clearing state, enabling the reentrancy described in the other finding. If withdraw() updated state first or used a reentrancy guard, the same low-level call pattern would not by itself let an attacker drain funds.",
         "remediation": "Do not treat low-level call usage alone as the bug. Fix the surrounding interaction pattern: clear state before the external transfer and/or add a reentrancy guard. If desired for clarity, keep call but wrap it in a helper or comment the intentional use; no separate replacement is required merely because it is a low-level call.",
         "validation": "Manually review whether any additional unchecked return, arbitrary target, or malformed calldata risk exists beyond the already-confirmed reentrancy path. A focused test can confirm that, after reentrancy remediation, the contract still transfers ETH correctly to recipients that need more than 2300 gas while preserving safety."
-      }
+      },
+      "evidence_layers": [
+        {
+          "stage": "detection",
+          "tool": "slither",
+          "version": "0.11.6",
+          "status": "detected",
+          "check": "low-level-calls"
+        },
+        {
+          "stage": "review",
+          "tool": "copilot",
+          "model": "gpt-5.4",
+          "status": "likely-false-positive"
+        },
+        {
+          "stage": "dynamic-test",
+          "status": "unmapped"
+        }
+      ]
     }
   ],
   "sources": {

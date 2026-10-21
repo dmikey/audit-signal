@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 )
@@ -16,15 +17,31 @@ type Location struct {
 	Lines []int  `json:"lines"`
 }
 type Finding struct {
-	ID          string             `json:"id"`
-	Check       string             `json:"check"`
-	Severity    string             `json:"severity"`
-	Confidence  string             `json:"confidence"`
-	Description string             `json:"description"`
-	Locations   []Location         `json:"locations"`
-	Origin      string             `json:"origin"`
-	Discovery   *DiscoveryEvidence `json:"discovery,omitempty"`
-	Review      *Review            `json:"review,omitempty"`
+	ID             string             `json:"id"`
+	Check          string             `json:"check"`
+	Severity       string             `json:"severity"`
+	Confidence     string             `json:"confidence"`
+	Description    string             `json:"description"`
+	Locations      []Location         `json:"locations"`
+	Origin         string             `json:"origin"`
+	Discovery      *DiscoveryEvidence `json:"discovery,omitempty"`
+	Review         *Review            `json:"review,omitempty"`
+	EvidenceLayers []EvidenceLayer    `json:"evidence_layers,omitempty"`
+}
+
+// EvidenceLayer is a derived account of what each tool actually contributed.
+// A successful test retains its plan claim; it is never silently promoted to
+// proof of exploitability or mixed with a detector hit or an AI verdict.
+type EvidenceLayer struct {
+	Stage   string `json:"stage"`
+	Tool    string `json:"tool,omitempty"`
+	Version string `json:"version,omitempty"`
+	Model   string `json:"model,omitempty"`
+	Status  string `json:"status"`
+	Check   string `json:"check,omitempty"`
+	Suite   string `json:"suite,omitempty"`
+	Test    string `json:"test,omitempty"`
+	Claim   string `json:"claim,omitempty"`
 }
 type DiscoveryEvidence struct {
 	SourceExcerpt   string `json:"source_excerpt"`
@@ -203,6 +220,9 @@ func saveReport(dir string, r Report) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
+	for i := range r.Findings {
+		r.Findings[i].EvidenceLayers = findingEvidenceLayers(r, r.Findings[i])
+	}
 	b, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err
@@ -282,12 +302,90 @@ func loadReport(path string) (Report, error) {
 			}
 		}
 	}
+	for i := range r.Findings {
+		expected := findingEvidenceLayers(r, r.Findings[i])
+		if r.Findings[i].EvidenceLayers != nil && !reflect.DeepEqual(r.Findings[i].EvidenceLayers, expected) {
+			return r, fmt.Errorf("finding evidence layers contradict report: %s", r.Findings[i].ID)
+		}
+		r.Findings[i].EvidenceLayers = expected
+	}
 	return r, nil
+}
+
+func findingEvidenceLayers(r Report, f Finding) []EvidenceLayer {
+	layers := make([]EvidenceLayer, 0, 3)
+	if f.Origin == "ai-discovery" {
+		layers = append(layers, EvidenceLayer{Stage: "discovery", Tool: "copilot", Model: r.DiscoveryModel, Status: "candidate", Check: f.Check})
+	} else {
+		status := "detected"
+		version := ""
+		if f.Origin == "slither" {
+			version = r.SlitherVersion
+			if r.Imported {
+				status = "imported"
+			}
+		}
+		layers = append(layers, EvidenceLayer{Stage: "detection", Tool: f.Origin, Version: version, Status: status, Check: f.Check})
+	}
+	if f.Review != nil {
+		layers = append(layers, EvidenceLayer{Stage: "review", Tool: "copilot", Model: r.Model, Status: f.Review.Verdict})
+	}
+	if r.Risk == nil {
+		return append(layers, EvidenceLayer{Stage: "dynamic-test", Status: "not-run"})
+	}
+	version := strings.SplitN(r.Risk.ForgeVersion, "\n", 2)[0]
+	matched := false
+	for _, e := range r.Risk.Evidence {
+		for _, id := range e.FindingIDs {
+			if id == f.ID {
+				layers = append(layers, EvidenceLayer{Stage: "dynamic-test", Tool: "foundry", Version: version, Status: e.Status, Suite: e.Suite, Test: e.Test, Claim: e.Claim})
+				matched = true
+				break
+			}
+		}
+	}
+	if !matched {
+		status := "unmapped"
+		if r.Risk.Status != "passed" {
+			status = "no-executed-evidence"
+		}
+		layers = append(layers, EvidenceLayer{Stage: "dynamic-test", Status: status})
+	}
+	return layers
+}
+
+func evidenceLayersMarkdown(r Report, f Finding) string {
+	var b strings.Builder
+	b.WriteString("### Evidence layers\n\n")
+	for _, l := range findingEvidenceLayers(r, f) {
+		switch l.Stage {
+		case "detection":
+			fmt.Fprintf(&b, "- **Detection:** `%s`", l.Tool)
+			if l.Version != "" {
+				fmt.Fprintf(&b, " `%s`", l.Version)
+			}
+			fmt.Fprintf(&b, " reported `%s` (%s).\n", l.Check, l.Status)
+		case "discovery":
+			fmt.Fprintf(&b, "- **Discovery:** `%s` model `%s` proposed `%s` as a candidate.\n", l.Tool, l.Model, l.Check)
+		case "review":
+			fmt.Fprintf(&b, "- **Review:** `%s` model `%s` assessed this as **%s**.\n", l.Tool, l.Model, l.Status)
+		case "dynamic-test":
+			if l.Tool == "" {
+				fmt.Fprintf(&b, "- **Dynamic testing:** %s.\n", l.Status)
+			} else {
+				fmt.Fprintf(&b, "- **Dynamic testing:** `%s` `%s` ran `%s:%s` — **%s**; plan claim: **%s**.\n", l.Tool, l.Version, l.Suite, l.Test, l.Status, l.Claim)
+			}
+		}
+	}
+	b.WriteString("\nA detector hit, AI assessment, and passing local test are distinct evidence. A test result supports only its recorded assertion and plan claim.\n\n")
+	return b.String()
 }
 
 func issueBody(r Report, f Finding) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "<!-- slither-agent:%s -->\n## %s\n\n**Severity:** %s · **Confidence:** %s · **Origin:** %s\n\n**Scope:** `%s` · **Revision:** `%s` · **Dirty:** %t · **Imported:** %t\n\n**Status:** automated candidate; requires human validation.\n\n### Source evidence\n\n%s\n\n", f.ID, f.Check, f.Severity, f.Confidence, f.Origin, r.Scope, r.Revision, r.Dirty, r.Imported, f.Description)
+	fmt.Fprintf(&b, "<!-- slither-agent:%s -->\n## %s\n\n**Severity:** %s · **Confidence:** %s · **Origin:** %s\n\n**Scope:** `%s` · **Revision:** `%s` · **Dirty:** %t · **Imported:** %t\n\n**Status:** automated candidate; requires human validation.\n\n", f.ID, f.Check, f.Severity, f.Confidence, f.Origin, r.Scope, r.Revision, r.Dirty, r.Imported)
+	b.WriteString(evidenceLayersMarkdown(r, f))
+	fmt.Fprintf(&b, "### Source evidence\n\n%s\n\n", f.Description)
 	for _, l := range f.Locations {
 		fmt.Fprintf(&b, "- `%s` lines %v\n", l.File, l.Lines)
 	}

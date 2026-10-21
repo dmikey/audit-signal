@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = "0.3.0"
+const Version = "0.4.0"
 const SlitherVersion = "0.11.6"
 const SolcSelectVersion = "1.2.0"
 
@@ -39,6 +39,8 @@ func Run(ctx context.Context, args []string, w io.Writer) error {
 		return discoverCommand(ctx, args[1:], w)
 	case "risk":
 		return riskCommand(ctx, args[1:], w)
+	case "render":
+		return renderCommand(args[1:], w)
 	case "publish":
 		return publishCommand(ctx, args[1:], w)
 	default:
@@ -54,6 +56,7 @@ Commands (use COMMAND --help for flags):
   review   AI-review an existing report using GitHub Copilot CLI
   discover Search source for flaws that Slither may miss using GitHub Copilot CLI
   risk     Execute a mapped Foundry exploit/fuzz/risk test plan in a local EVM
+  render   Rebuild Markdown and evidence-layer JSON from a saved report
   publish  Create/update deduplicated security issues from a reviewed report
   version  Print binary version
 
@@ -334,5 +337,27 @@ func discoverCommand(ctx context.Context, args []string, w io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(w, "AI discovery complete: %d total findings; saved to %s\n", len(r.Findings), *out)
+	return nil
+}
+
+func renderCommand(args []string, w io.Writer) error {
+	f := flags("render", w)
+	path := f.String("report", "reports/report.json", "Existing report JSON")
+	out := f.String("out", "", "Output directory (defaults to the report directory)")
+	if err := parse(f, args); err != nil {
+		return err
+	}
+	r, err := loadReport(*path)
+	if err != nil {
+		return err
+	}
+	dir := *out
+	if dir == "" {
+		dir = filepath.Dir(*path)
+	}
+	if err := saveReport(dir, r); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "Rendered %d findings with evidence layers to %s\n", len(r.Findings), dir)
 	return nil
 }

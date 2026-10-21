@@ -40,7 +40,52 @@
           ]
         }
       ],
-      "origin": "slither"
+      "origin": "slither",
+      "evidence_layers": [
+        {
+          "stage": "detection",
+          "tool": "slither",
+          "version": "0.11.6",
+          "status": "detected",
+          "check": "reentrancy-eth"
+        },
+        {
+          "stage": "dynamic-test",
+          "tool": "foundry",
+          "version": "forge Version: 1.8.5",
+          "status": "Success",
+          "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+          "test": "test_ReentrancyDrainsVictimFunds()",
+          "claim": "exploit-reproduced"
+        },
+        {
+          "stage": "dynamic-test",
+          "tool": "foundry",
+          "version": "forge Version: 1.8.5",
+          "status": "Success",
+          "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+          "test": "test_FixedVaultBlocksSameAttack()",
+          "claim": "mitigation-holds"
+        },
+        {
+          "stage": "dynamic-test",
+          "tool": "foundry",
+          "version": "forge Version: 1.8.5",
+          "status": "Success",
+          "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+          "test": "test_FailedTransferRestoresCredit()",
+          "claim": "risk-property"
+        },
+        {
+          "stage": "dynamic-test",
+          "tool": "foundry",
+          "version": "forge Version: 1.8.5",
+          "status": "Success",
+          "suite": "test/VaultRisk.t.sol:VaultRiskTest",
+          "test": "testFuzz_FixedVaultPreservesVictimFunds(uint96,uint8)",
+          "claim": "risk-property"
+        }
+      ]
     },
     {
       "id": "837afa4c26de785758112cebadfdb5ee411b54085c94bbcbb7030d9438668faa",
@@ -67,7 +112,20 @@
           ]
         }
       ],
-      "origin": "slither"
+      "origin": "slither",
+      "evidence_layers": [
+        {
+          "stage": "detection",
+          "tool": "slither",
+          "version": "0.11.6",
+          "status": "detected",
+          "check": "low-level-calls"
+        },
+        {
+          "stage": "dynamic-test",
+          "status": "unmapped"
+        }
+      ]
     }
   ],
   "sources": {
