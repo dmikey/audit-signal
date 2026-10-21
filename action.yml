@@ -79,7 +79,10 @@ outputs:
     value: ${{ steps.report.outputs.coverage-markdown }}
   suite-log:
     description: Absolute path to the project test suite log when enabled
-    value: ${{ steps.suite.outputs.log-path }}
+    value: ${{ steps.report.outputs.suite-log }}
+  report-directory:
+    description: Absolute path to the report directory, including logs on failed suites
+    value: ${{ steps.report.outputs.report-directory }}
 runs:
   using: composite
   steps:
@@ -163,11 +166,15 @@ runs:
         SUITE_COMMAND_JSON: ${{ inputs.suite-command-json }}
       run: |
         set -euo pipefail
+        set +e
         "$AUDIT_SIGNAL_BIN" suite --report "$AUDIT_SIGNAL_REPORT/report.json" \
           --source-root "$GITHUB_WORKSPACE" --project "$GITHUB_WORKSPACE/$SUITE_PROJECT" \
           --command-json "$SUITE_COMMAND_JSON" --out "$AUDIT_SIGNAL_REPORT"
+        suite_status=$?
+        set -e
         log_path="$(find "$AUDIT_SIGNAL_REPORT" -maxdepth 1 -name 'project-suite-*.log' -print -quit)"
         echo "log-path=$log_path" >> "$GITHUB_OUTPUT"
+        exit "$suite_status"
     - uses: actions/setup-node@v6
       if: inputs.ai == 'review' && inputs.provider == 'copilot'
       with:
@@ -236,3 +243,9 @@ runs:
         echo "assurance-markdown=$AUDIT_SIGNAL_REPORT/assurance.md" >> "$GITHUB_OUTPUT"
         echo "coverage-json=$AUDIT_SIGNAL_REPORT/coverage.json" >> "$GITHUB_OUTPUT"
         echo "coverage-markdown=$AUDIT_SIGNAL_REPORT/coverage.md" >> "$GITHUB_OUTPUT"
+        echo "report-directory=$AUDIT_SIGNAL_REPORT" >> "$GITHUB_OUTPUT"
+        log_path=""
+        if [[ -d "$AUDIT_SIGNAL_REPORT" ]]; then
+          log_path="$(find "$AUDIT_SIGNAL_REPORT" -maxdepth 1 -name 'project-suite-*.log' -print -quit)"
+        fi
+        echo "suite-log=$log_path" >> "$GITHUB_OUTPUT"

@@ -73,6 +73,41 @@ jobs:
           assert gate['passed'] and gate['blocked'] == 0, gate
           assert gate['policy']['evidence'] == 'slither-detected'
           PY
+  action-suite-failure-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Run Action with an intentionally failing project suite
+        id: audit
+        uses: ./
+        continue-on-error: true
+        with:
+          target: examples/VulnerableVault.sol
+          scope: example/vault-suite-failure
+          ai: none
+          solc-version: '0.8.28'
+          suite-command-json: '["python3","-c","print(\"suite failure proof\"); raise SystemExit(7)"]'
+      - name: Assert failed suite retained its report and log
+        if: always()
+        env:
+          OUTCOME: ${{ steps.audit.outcome }}
+          REPORT_DIR: ${{ steps.audit.outputs.report-directory }}
+          SUITE_LOG: ${{ steps.audit.outputs.suite-log }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          assert os.environ['OUTCOME'] == 'failure', os.environ['OUTCOME']
+          report_dir = os.environ['REPORT_DIR']
+          log_path = os.environ['SUITE_LOG']
+          assert os.path.isfile(log_path), log_path
+          with open(os.path.join(report_dir, 'report.json')) as f:
+              report = json.load(f)
+          run, = report['project_tests']
+          assert run['status'] == 'failed' and run['exit_code'] == 7, run
+          assert run['log_sha256'] == hashlib.sha256(open(log_path, 'rb').read()).hexdigest()
+          PY
   test:
     runs-on: ubuntu-latest
     steps:
