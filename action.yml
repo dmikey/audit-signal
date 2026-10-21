@@ -46,6 +46,12 @@ inputs:
   intent-file:
     description: Optional reviewed protocol intent JSON for invariant assurance
     default: ''
+  suite-project:
+    description: Trusted test project path within the caller checkout
+    default: '.'
+  suite-command-json:
+    description: Optional JSON string array of a project test executable and arguments
+    default: ''
 outputs:
   report-json:
     description: Absolute path to the machine-readable report
@@ -71,6 +77,9 @@ outputs:
   coverage-markdown:
     description: Absolute path to the human-readable compilation coverage receipt
     value: ${{ steps.report.outputs.coverage-markdown }}
+  suite-log:
+    description: Absolute path to the project test suite log when enabled
+    value: ${{ steps.suite.outputs.log-path }}
 runs:
   using: composite
   steps:
@@ -123,10 +132,6 @@ runs:
         go-version: '1.24.x'
         cache: false
     - uses: astral-sh/setup-uv@v7
-    - uses: actions/setup-node@v6
-      if: inputs.ai == 'review' && inputs.provider == 'copilot'
-      with:
-        node-version: '26.12.1'
     - name: Build scanner and install Slither
       shell: bash
       env:
@@ -136,10 +141,6 @@ runs:
         set -euo pipefail
         (cd "$ACTION_PATH" && go build -trimpath -o "$AUDIT_SIGNAL_BIN" ./cmd/audit-signal)
         "$AUDIT_SIGNAL_BIN" setup --venv "$AUDIT_SIGNAL_VENV" --solc-version "$SOLC_VERSION"
-    - name: Install Copilot CLI
-      if: inputs.ai == 'review' && inputs.provider == 'copilot'
-      shell: bash
-      run: npm install -g @github/copilot@1.0.97
     - name: Scan contracts with Slither
       shell: bash
       env:
@@ -153,6 +154,28 @@ runs:
         "$AUDIT_SIGNAL_BIN" audit --target "$TARGET" --scope "$SCOPE" \
           --ai none --venv "$AUDIT_SIGNAL_VENV" --solc-version "$SOLC_VERSION" \
           --max-source-bytes "$MAX_SOURCE_BYTES" --out "$AUDIT_SIGNAL_REPORT"
+    - name: Run trusted project test suite
+      id: suite
+      if: inputs.suite-command-json != ''
+      shell: bash
+      env:
+        SUITE_PROJECT: ${{ inputs.suite-project }}
+        SUITE_COMMAND_JSON: ${{ inputs.suite-command-json }}
+      run: |
+        set -euo pipefail
+        "$AUDIT_SIGNAL_BIN" suite --report "$AUDIT_SIGNAL_REPORT/report.json" \
+          --source-root "$GITHUB_WORKSPACE" --project "$GITHUB_WORKSPACE/$SUITE_PROJECT" \
+          --command-json "$SUITE_COMMAND_JSON" --out "$AUDIT_SIGNAL_REPORT"
+        log_path="$(find "$AUDIT_SIGNAL_REPORT" -maxdepth 1 -name 'project-suite-*.log' -print -quit)"
+        echo "log-path=$log_path" >> "$GITHUB_OUTPUT"
+    - uses: actions/setup-node@v6
+      if: inputs.ai == 'review' && inputs.provider == 'copilot'
+      with:
+        node-version: '26.12.1'
+    - name: Install Copilot CLI
+      if: inputs.ai == 'review' && inputs.provider == 'copilot'
+      shell: bash
+      run: npm install -g @github/copilot@1.0.97
     - name: Discover source-level security candidates
       if: inputs.ai == 'review' && inputs.discover == 'true'
       shell: bash

@@ -20,12 +20,14 @@ jobs:
           ai: none
           solc-version: '0.8.28'
           intent-file: examples/intent/vault-vulnerable.json
+          suite-command-json: '["python3","-c","assert 2 + 2 == 4"]'
       - name: Assert action output and real Slither finding
         env:
           REPORT_JSON: ${{ steps.audit.outputs.report-json }}
           REPORT_MARKDOWN: ${{ steps.audit.outputs.report-markdown }}
           ASSURANCE_JSON: ${{ steps.audit.outputs.assurance-json }}
           COVERAGE_JSON: ${{ steps.audit.outputs.coverage-json }}
+          SUITE_LOG: ${{ steps.audit.outputs.suite-log }}
         run: |
           python3 - <<'PY'
           import json, os
@@ -34,6 +36,9 @@ jobs:
           assert os.path.isfile(os.environ['REPORT_MARKDOWN'])
           assert report['scope'] == 'example/vault'
           assert report['reviewed'] is False
+          assert len(report['project_tests']) == 1 and report['project_tests'][0]['status'] == 'passed'
+          assert os.path.isfile(os.environ['SUITE_LOG'])
+          assert all(any(layer['stage'] == 'dynamic-test' and layer['status'] == 'not-run' for layer in f['evidence_layers']) for f in report['findings'])
           assert any(f['check'] == 'reentrancy-eth' and f['severity'] == 'High' for f in report['findings'])
           with open(os.environ['ASSURANCE_JSON']) as f:
               assurance = json.load(f)
