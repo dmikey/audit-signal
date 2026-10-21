@@ -312,6 +312,9 @@ func loadReport(path string) (Report, error) {
 		}
 	}
 	if r.Coverage != nil {
+		if r.Imported && r.Coverage.Status == "complete" {
+			return r, fmt.Errorf("imported report cannot claim direct compilation coverage")
+		}
 		if err := validateCoverage(*r.Coverage, r.Sources); err != nil {
 			return r, err
 		}

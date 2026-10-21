@@ -46,6 +46,17 @@ func TestCoverageReceiptAndFailClosedGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	loaded.Coverage.CompilationUnits[0].Sources = nil
+	if err := saveReport(root, loaded); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadReport(filepath.Join(root, "report.json")); err == nil {
+		t.Fatal("inconsistent complete-coverage receipt was accepted")
+	}
+	loaded.Coverage = coverage
+	if err := saveReport(root, loaded); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := os.Stat(filepath.Join(root, "coverage.md")); err != nil {
 		t.Fatal(err)
 	}

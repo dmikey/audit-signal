@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -257,12 +258,12 @@ func inventoryExclusions(root, target string, c *CoverageReceipt) error {
 }
 
 func validateCoverage(c CoverageReceipt, sources map[string]Source) error {
-	if c.Version != 1 || (c.Status != "complete" && c.Status != "incomplete" && c.Status != "unavailable") || len(c.SlitherOutputSHA256) != 64 {
+	if c.Version != 1 || (c.Status != "complete" && c.Status != "incomplete" && c.Status != "unavailable") || !validSHA256(c.SlitherOutputSHA256) {
 		return fmt.Errorf("invalid coverage receipt")
 	}
 	seen := map[string]bool{}
 	for _, target := range c.TargetSources {
-		if !safeSourcePath(target.Path) || seen[target.Path] || sources[target.Path].SHA256 != target.SHA256 {
+		if !safeSourcePath(target.Path) || !validSHA256(target.SHA256) || seen[target.Path] || sources[target.Path].SHA256 != target.SHA256 {
 			return fmt.Errorf("coverage target source mismatch: %s", target.Path)
 		}
 		seen[target.Path] = true
@@ -272,10 +273,36 @@ func validateCoverage(c CoverageReceipt, sources map[string]Source) error {
 	}
 	compiled := map[string]CoverageSource{}
 	for _, source := range c.CompiledSources {
-		if source.Path == "" || source.SHA256 == "" || len(source.Units) == 0 || compiled[source.Path].Path != "" || (source.Role != "target" && source.Role != "dependency") {
+		if !safeSourcePath(source.Path) || !validSHA256(source.SHA256) || len(source.Units) == 0 || compiled[source.Path].Path != "" || (source.Role != "target" && source.Role != "dependency") {
 			return fmt.Errorf("invalid compiled source in coverage receipt")
 		}
+		if _, target := seen[source.Path]; target != (source.Role == "target") {
+			return fmt.Errorf("compiled source role mismatch: %s", source.Path)
+		}
 		compiled[source.Path] = source
+	}
+	units := map[string]CoverageUnit{}
+	for _, unit := range c.CompilationUnits {
+		if unit.ID == "" || units[unit.ID].ID != "" {
+			return fmt.Errorf("invalid compilation unit in coverage receipt")
+		}
+		if c.Status == "complete" && (unit.Compiler == "" || unit.CompilerVersion == "" || len(unit.Sources) == 0) {
+			return fmt.Errorf("complete coverage has incomplete compilation unit")
+		}
+		units[unit.ID] = unit
+		for _, path := range unit.Sources {
+			if _, ok := compiled[path]; !ok && c.Status == "complete" {
+				return fmt.Errorf("compilation unit references unknown source: %s", path)
+			}
+		}
+	}
+	for _, source := range c.CompiledSources {
+		for _, unitID := range source.Units {
+			unit, ok := units[unitID]
+			if !ok || !containsString(unit.Sources, source.Path) {
+				return fmt.Errorf("compiled source has invalid unit mapping: %s", source.Path)
+			}
+		}
 	}
 	for _, target := range c.TargetSources {
 		if source, ok := compiled[target.Path]; !ok || source.SHA256 != target.SHA256 || source.Role != "target" {
@@ -296,6 +323,14 @@ func validateCoverage(c CoverageReceipt, sources map[string]Source) error {
 		}
 	}
 	return nil
+}
+
+func validSHA256(value string) bool {
+	if len(value) != 64 || strings.ToLower(value) != value {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 func saveCoverage(dir string, c CoverageReceipt) error {
