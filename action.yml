@@ -37,6 +37,12 @@ inputs:
   max-source-bytes:
     description: Maximum bundled source bytes; oversized input fails
     default: '48000'
+  policy-file:
+    description: Optional caller-repository policy JSON; enables the merge gate
+    default: ''
+  baseline-file:
+    description: Optional caller-repository accepted-finding baseline JSON
+    default: ''
 outputs:
   report-json:
     description: Absolute path to the machine-readable report
@@ -44,6 +50,12 @@ outputs:
   report-markdown:
     description: Absolute path to the human-readable report
     value: ${{ steps.report.outputs.report-markdown }}
+  gate-json:
+    description: Absolute path to the policy decision JSON when enabled
+    value: ${{ steps.report.outputs.gate-json }}
+  gate-markdown:
+    description: Absolute path to the policy decision Markdown when enabled
+    value: ${{ steps.report.outputs.gate-markdown }}
 runs:
   using: composite
   steps:
@@ -55,6 +67,8 @@ runs:
         DISCOVER: ${{ inputs.discover }}
         PROVIDER: ${{ inputs.provider }}
         MODEL: ${{ inputs.model }}
+        POLICY_FILE: ${{ inputs.policy-file }}
+        BASELINE_FILE: ${{ inputs.baseline-file }}
       run: |
         set -euo pipefail
         if [[ "$RUNNER_OS" != Linux && "$RUNNER_OS" != macOS ]]; then
@@ -81,6 +95,7 @@ runs:
           fi
         fi
         if [[ -z "$TARGET" ]]; then echo 'target cannot be empty.' >&2; exit 1; fi
+        if [[ -n "$BASELINE_FILE" && -z "$POLICY_FILE" ]]; then echo 'baseline-file requires policy-file.' >&2; exit 1; fi
         work="$(mktemp -d "$RUNNER_TEMP/audit-signal.XXXXXX")"
         {
           echo "AUDIT_SIGNAL_BIN=$work/audit-signal"
@@ -148,9 +163,23 @@ runs:
       run: |
         "$AUDIT_SIGNAL_BIN" review --report "$AUDIT_SIGNAL_REPORT/report.json" \
           --out "$AUDIT_SIGNAL_REPORT" --provider "$PROVIDER" --model "$MODEL"
+    - name: Apply caller policy gate
+      if: inputs.policy-file != ''
+      shell: bash
+      env:
+        POLICY_FILE: ${{ inputs.policy-file }}
+        BASELINE_FILE: ${{ inputs.baseline-file }}
+      run: |
+        set -euo pipefail
+        args=(--report "$AUDIT_SIGNAL_REPORT/report.json" --policy "$POLICY_FILE" --expected-revision "$GITHUB_SHA" --out "$AUDIT_SIGNAL_REPORT")
+        if [[ -n "$BASELINE_FILE" ]]; then args+=(--baseline "$BASELINE_FILE"); fi
+        "$AUDIT_SIGNAL_BIN" gate "${args[@]}"
     - name: Expose report paths
       id: report
+      if: always()
       shell: bash
       run: |
         echo "report-json=$AUDIT_SIGNAL_REPORT/report.json" >> "$GITHUB_OUTPUT"
         echo "report-markdown=$AUDIT_SIGNAL_REPORT/report.md" >> "$GITHUB_OUTPUT"
+        echo "gate-json=$AUDIT_SIGNAL_REPORT/gate.json" >> "$GITHUB_OUTPUT"
+        echo "gate-markdown=$AUDIT_SIGNAL_REPORT/gate.md" >> "$GITHUB_OUTPUT"

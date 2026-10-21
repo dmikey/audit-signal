@@ -33,6 +33,32 @@ jobs:
           assert report['reviewed'] is False
           assert any(f['check'] == 'reentrancy-eth' and f['severity'] == 'High' for f in report['findings'])
           PY
+  action-policy-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Run Action with caller policy against clean fixture
+        id: audit
+        uses: ./
+        with:
+          target: examples/RewardPool.sol
+          scope: example/policy-reward-pool
+          ai: none
+          solc-version: '0.8.28'
+          policy-file: examples/policy.json
+      - name: Assert policy receipt
+        env:
+          GATE_JSON: ${{ steps.audit.outputs.gate-json }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          with open(os.environ['GATE_JSON']) as f:
+              gate = json.load(f)
+          assert gate['passed'] and gate['blocked'] == 0, gate
+          assert gate['policy']['evidence'] == 'slither-detected'
+          PY
   test:
     runs-on: ubuntu-latest
     steps:

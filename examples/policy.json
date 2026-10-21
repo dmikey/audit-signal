@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "minimum_severity": "High",
+  "evidence": "slither-detected",
+  "allow_imported": false,
+  "allow_dirty": false
+}

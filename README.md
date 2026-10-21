@@ -66,7 +66,7 @@ AI review consumes a bounded source bundle (48 KB by default). It excludes vendo
 
 ### One-step installable action
 
-After checkout, add `uses: dmikey/audit-signal@v0.7.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
+After checkout, add `uses: dmikey/audit-signal@v0.8.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
 
 ```yaml
 name: Smart contract audit
@@ -82,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
       - id: scan
-        uses: dmikey/audit-signal@v0.7.0
+        uses: dmikey/audit-signal@v0.8.0
         with:
           target: '.'
           solc-version: '0.8.28'
@@ -117,7 +117,7 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.7.0
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.8.0
     with:
       target: '.'
       solc-version: '0.8.28'
@@ -142,11 +142,11 @@ For a provider key, add `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` under the **priv
 ```yaml
 jobs:
   audit:
-    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.7.0
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.8.0
     with:
       provider: openai # or anthropic
       model: YOUR_PROVIDER_MODEL_ID
-      agent-ref: v0.7.0
+      agent-ref: v0.8.0
       target: '.'
       publish: false
     secrets:
@@ -177,6 +177,21 @@ Use Foundry v1.8.5 or a version supporting `forge test --json-file`. Compilation
 Reports retain the exact test status, fuzz/invariant execution metadata, harness/config hashes, plan hash, Foundry version and finding IDs without dynamic coverage. Raw `forge-results.json` and `risk.log` are saved beside the reports. Missing/skipped mapped tests, failed tests, malformed output and execution errors fail the stage and block normal review/publication; existing AI review is invalidated before execution. Tests that prove an exploit works should assert the observed loss and pass when it is reproduced. A remediation fixture passing does not repair the original audited contract.
 
 The workflow enables this stage when `risk-project` is set; otherwise dynamic testing is skipped. Its risk stage runs before AI discovery, so tests for newly discovered candidates need a subsequent manual `risk` run or a project-specific workflow adjustment. Run only trusted local suites: FFI and filesystem cheatcode permissions are disabled and credentials are removed from the test process, but Forge is not a complete network sandbox. This tool does not provide RPC endpoints, private keys, deploy contracts or broadcast transactions. A suite with explicit fork/RPC calls would need separate authorization and isolation. No live-chain penetration testing is included.
+
+## Merge policy gate
+
+The optional `gate` command turns a completed report into a deterministic CI decision. Check a policy JSON file into the **contract repository**; [the example policy](examples/policy.json) blocks new High-severity, directly detected Slither findings. Set `evidence` to `ai-reviewed` to require a completed AI review and a `likely-valid` verdict, or to `local-exploit-test` to require a successful local Foundry test with the explicit `exploit-reproduced` claim. These are distinct evidence rules: a model verdict is not a reproduced exploit, and a passing risk-property test is not an exploit test. Imported reports and dirty checkouts fail unless the policy explicitly permits them. An incomplete required AI or risk stage fails the gate rather than producing a clean result.
+
+```sh
+audit-signal gate --report reports/report.json --policy .audit-signal/policy.json \
+  --baseline .audit-signal/baseline.json
+```
+
+Both GitHub install paths pass the caller commit as `--expected-revision`, so a stale report cannot satisfy the gate.
+
+The baseline is optional. Without it, every finding matching the policy is new and blocks. To accept a known finding, add its exact 64-character ID from `report.json` to a versioned baseline with the same report `scope`, an accountable `owner`, a `reason`, and an ISO `expires` date. [The empty baseline example](examples/baseline.example.json) shows the shape; an entry in `accepted` looks like `{"finding_id":"<exact ID>","owner":"security-team","reason":"tracked remediation","expires":"2026-12-31"}`. Acceptance expires **after** that UTC date. A changed finding ID is new and must be reviewed again. Accepted findings remain visible in `gate.json` and `gate.md`; expired acceptances block. The gate never writes GitHub issues or modifies the baseline.
+
+For the installable Action, pass `policy-file: .audit-signal/policy.json` and optionally `baseline-file: .audit-signal/baseline.json`. It exposes `gate-json` and `gate-markdown` outputs, and fails the job when the policy blocks. The reusable workflow accepts the same paths as inputs, reads them from the caller checkout after AI review, uploads the decision with the report, and skips publication on a failed gate. Run the workflow on `pull_request` with `publish: false`; configure its successful job as a [required status check](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets) in the caller's branch ruleset. If that repository uses a merge queue, also trigger the caller workflow on `merge_group`. Protect the caller's policy, baseline and workflow files with security-team CODEOWNERS review; otherwise a pull request can relax its own gate.
 
 ## Report contents and publication
 
