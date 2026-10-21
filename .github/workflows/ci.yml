@@ -52,6 +52,13 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
+          name: example-reward-pool-static-audit
+          path: |
+            reports/reward-pool/report.md
+            reports/reward-pool/report.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
           name: example-vault-static-audit
           path: |
             reports/report.md
