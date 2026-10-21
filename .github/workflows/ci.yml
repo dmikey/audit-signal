@@ -109,6 +109,40 @@ jobs:
           assert run['status'] == 'failed' and run['exit_code'] == 7, run
           assert run['log_sha256'] == hashlib.sha256(open(log_path, 'rb').read()).hexdigest()
           PY
+  action-suite-zero-tests-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Reject a successful command that ran zero Mocha tests
+        id: audit
+        uses: ./
+        continue-on-error: true
+        with:
+          target: examples/VulnerableVault.sol
+          scope: example/vault-suite-zero
+          ai: none
+          solc-version: '0.8.28'
+          suite-result-format: mocha-spec
+          suite-command-json: '["python3","-c","print(\"  0 passing (1ms)\")"]'
+      - name: Assert the failed receipt and log remain available
+        if: always()
+        env:
+          OUTCOME: ${{ steps.audit.outcome }}
+          REPORT_JSON: ${{ steps.audit.outputs.report-json }}
+          SUITE_LOG: ${{ steps.audit.outputs.suite-log }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          assert os.environ['OUTCOME'] == 'failure', os.environ['OUTCOME']
+          with open(os.environ['REPORT_JSON']) as f:
+              report = json.load(f)
+          run, = report['project_tests']
+          assert run['status'] == 'error' and run['result_format'] == 'mocha-spec', run
+          assert run['passed_tests'] == 0 and run['result_error'] == 'Mocha ran zero passing tests', run
+          assert os.path.isfile(os.environ['SUITE_LOG'])
+          PY
   test:
     runs-on: ubuntu-latest
     steps:
