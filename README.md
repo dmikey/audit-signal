@@ -12,7 +12,7 @@ See the [VulnerableVault audit walkthrough](examples/README.md), with committed 
 
 ## Build and run
 
-Requires Go 1.20+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and Node.js 22+ for Copilot CLI. The reusable workflow defaults to **Node.js 26.12.1**, the current release containing the [October 21, 2026 TLS security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases); callers can override `node-version` when a different patched release is needed. CI produces binaries for Linux, macOS and Windows. Slither setup and live scanning are tested on Linux and macOS; Windows compiler availability depends on your toolchain.
+Requires Go 1.20+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and a patched Node.js release for Copilot CLI. Local development and the reusable workflow use **Node.js 26.12.1**, which includes the [October 21, 2026 TLS security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases). Callers can override `node-version` with another patched release. CI produces binaries for Linux, macOS and Windows. Slither setup and live scanning are tested on Linux and macOS; Windows compiler availability depends on your toolchain.
 
 ```sh
 go build -trimpath -o bin/slither-agent ./cmd/slither-agent

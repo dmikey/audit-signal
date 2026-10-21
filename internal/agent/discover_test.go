@@ -45,4 +45,9 @@ print(json.dumps({'findings':[{'check':'reward-claim-key-mismatch','title':'Wron
 	if _, err := parseDiscoveries(r.Scope, r.Sources, nil, bad); err == nil {
 		t.Fatal("accepted invented source line")
 	}
+	misnumbered := []byte(`{"findings":[{"check":"reward-claim-key-mismatch","title":"Wrong claim key","severity":"High","description":"repeat claim","file":"Pool.sol","line":2,"source_excerpt":"function claim(address beneficiary) public { uint delta = last[msg.sender]; }","exploit_scenario":"fresh callers","remediation":"fix key","validation":"test"}]}`)
+	grounded, err := parseDiscoveries(r.Scope, r.Sources, nil, misnumbered)
+	if err != nil || len(grounded) != 1 || grounded[0].Locations[0].Lines[0] != 3 {
+		t.Fatalf("unique source excerpt was not normalized: %v", err)
+	}
 }

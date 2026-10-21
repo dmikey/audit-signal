@@ -107,7 +107,14 @@ func runCopilot(ctx context.Context, executable, model, prompt string) ([]byte, 
 		// Do not echo logs: they can contain private source or credential data.
 		return nil, fmt.Errorf("Copilot failed (%v); verify CLI version, Copilot authentication/policy and credits; report retained", err)
 	}
-	return stdout.Bytes(), nil
+	// Copilot CLI occasionally prefixes a JSON response with six progress
+	// asterisks. Remove only that exact prefix; the strict JSON decoder still
+	// rejects commentary, code fences, trailing output, and malformed reviews.
+	out := bytes.TrimSpace(stdout.Bytes())
+	if bytes.HasPrefix(out, []byte("******{")) {
+		out = out[6:]
+	}
+	return out, nil
 }
 
 func applyReviews(r *Report, data []byte) error {

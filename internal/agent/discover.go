@@ -137,11 +137,24 @@ func parseDiscoveries(scope string, sources map[string]Source, existing []Findin
 			return nil, fmt.Errorf("AI discovery source is absent or changed: %s", c.File)
 		}
 		lines := strings.Split(src.Content, "\n")
-		if c.Line < 1 || c.Line > len(lines) || strings.TrimSpace(c.SourceExcerpt) == "" || strings.TrimSpace(lines[c.Line-1]) != strings.TrimSpace(c.SourceExcerpt) {
-			return nil, fmt.Errorf("AI discovery source line does not match: %s:%d", c.File, c.Line)
+		excerpt := strings.TrimSpace(c.SourceExcerpt)
+		line := c.Line
+		if line < 1 || line > len(lines) || excerpt == "" || strings.TrimSpace(lines[line-1]) != excerpt {
+			line = 0
+			for i, sourceLine := range lines {
+				if strings.TrimSpace(sourceLine) == excerpt {
+					if line != 0 {
+						return nil, fmt.Errorf("AI discovery excerpt is ambiguous: %s", c.File)
+					}
+					line = i + 1
+				}
+			}
+			if line == 0 {
+				return nil, fmt.Errorf("AI discovery source excerpt does not match: %s:%d", c.File, c.Line)
+			}
 		}
 		check := "ai-" + c.Check
-		id := digest(scope + "\x00" + check + "\x00" + c.File + "\x00" + fmt.Sprint(c.Line) + "\x00" + strings.TrimSpace(c.SourceExcerpt))
+		id := digest(scope + "\x00" + check + "\x00" + c.File + "\x00" + fmt.Sprint(line) + "\x00" + excerpt)
 		if seen[id] {
 			return nil, fmt.Errorf("AI discovery contains duplicate candidates")
 		}
@@ -151,8 +164,8 @@ func parseDiscoveries(scope string, sources map[string]Source, existing []Findin
 					if loc.File != c.File {
 						continue
 					}
-					for _, line := range loc.Lines {
-						if line == c.Line {
+					for _, priorLine := range loc.Lines {
+						if priorLine == line {
 							return nil, fmt.Errorf("AI discovery overlaps an existing Slither security finding")
 						}
 					}
@@ -160,7 +173,7 @@ func parseDiscoveries(scope string, sources map[string]Source, existing []Findin
 			}
 		}
 		seen[id] = true
-		findings = append(findings, Finding{ID: id, Check: check, Severity: c.Severity, Confidence: "AI hypothesis", Description: c.Title + ": " + c.Description, Locations: []Location{{File: c.File, Lines: []int{c.Line}}}, Origin: "ai-discovery", Discovery: &DiscoveryEvidence{SourceExcerpt: strings.TrimSpace(c.SourceExcerpt), ExploitScenario: c.ExploitScenario, Remediation: c.Remediation, Validation: c.Validation}})
+		findings = append(findings, Finding{ID: id, Check: check, Severity: c.Severity, Confidence: "AI hypothesis", Description: c.Title + ": " + c.Description, Locations: []Location{{File: c.File, Lines: []int{line}}}, Origin: "ai-discovery", Discovery: &DiscoveryEvidence{SourceExcerpt: excerpt, ExploitScenario: c.ExploitScenario, Remediation: c.Remediation, Validation: c.Validation}})
 	}
 	return findings, nil
 }

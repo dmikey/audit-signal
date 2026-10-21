@@ -223,7 +223,7 @@ assert os.environ['COPILOT_ALLOW_ALL']=='false'
 assert os.environ['GH_TOKEN']=='fake-review-token'
 assert os.getcwd()!=os.environ.get('ORIGINAL_DIR','')
 payload=json.loads(sys.stdin.read().split('UNTRUSTED AUDIT PAYLOAD:\n',1)[1])
-print(json.dumps({'reviews':[{'id':f['id'],'verdict':'needs-review','reasoning':'Vault.sol line 5','exploit_scenario':'callback before write','remediation':'checks effects interactions','validation':'write attacker test'} for f in payload['findings']]}))
+print('******'+json.dumps({'reviews':[{'id':f['id'],'verdict':'needs-review','reasoning':'Vault.sol line 5','exploit_scenario':'callback before write','remediation':'checks effects interactions','validation':'write attacker test'} for f in payload['findings']]}))
 `
 	if err := os.WriteFile(script, []byte(code), 0700); err != nil {
 		t.Fatal(err)
