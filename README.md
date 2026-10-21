@@ -64,13 +64,14 @@ AI review consumes a bounded source bundle (48 KB by default). It excludes vendo
 
 ### One-step installable action
 
-After checkout, add `uses: dmikey/slither-agent@v0.6.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. A static audit needs no model key:
+After checkout, add `uses: dmikey/slither-agent@v0.6.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
 
 ```yaml
 name: Smart contract audit
 on: [workflow_dispatch]
 permissions:
   contents: read
+  copilot-requests: write
 jobs:
   audit:
     runs-on: ubuntu-latest
@@ -92,7 +93,7 @@ jobs:
           retention-days: 1
 ```
 
-To add AI review, set `ai: review`, `discover: 'true'`, `provider`, and `model` on the action step. Supply the matching secret through `with`, for example `openai-api-key: ${{ secrets.OPENAI_API_KEY }}` or `anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}`. For Copilot, grant `copilot-requests: write` in the workflow permissions and optionally set `copilot-token: ${{ secrets.COPILOT_TOKEN }}`. Secrets are supplied only to the selected AI steps, after the static scan. Do not place provider keys in job-level `env`, where dependency setup would inherit them. Install any trusted Foundry/Hardhat dependencies in a step before the action.
+Set `ai: none` for a static audit with no model access. For the default Copilot review, you may also set `discover: 'true'` to look beyond Slither findings and `copilot-token: ${{ secrets.COPILOT_TOKEN }}` when using a PAT. To use another provider, set `provider` and `model` and supply the matching secret through `with`, for example `openai-api-key: ${{ secrets.OPENAI_API_KEY }}` or `anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}`. Secrets are supplied only to the selected AI steps, after the static scan. Do not place provider keys in job-level `env`, where dependency setup would inherit them. Install any trusted Foundry/Hardhat dependencies in a step before the action.
 
 This action writes reports to the runner's temporary directory and does not publish issues. Use the reusable workflow below when you need isolated jobs for risk tests, AI review, and issue publication. Its jobs keep model credentials away from project setup and give issue-write permission only to the publisher. GitHub [distinguishes composite actions from reusable workflows](https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action#composite-actions-and-reusable-workflows).
 

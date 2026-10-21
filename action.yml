@@ -14,8 +14,8 @@ inputs:
     description: Solidity compiler version to install
     default: '0.8.28'
   ai:
-    description: none or review; static-only scanning works without a model credential
-    default: none
+    description: review (default, using Copilot) or none for a static-only scan
+    default: review
   discover:
     description: Search for additional source-level candidates before AI review
     default: 'false'
