@@ -26,6 +26,12 @@ Retain each finding ID. All fields are required and nonempty. This pass reviews 
 UNTRUSTED AUDIT PAYLOAD:
 `
 
+// Keep each response small enough for the model to return every required field.
+// The full source bundle accompanies every batch so cross-contract context is
+// available even when findings are split across separate requests.
+const maxReviewBatchFindings = 8
+const maxReviewPayloadBytes = 256000
+
 // Run the reviewer outside the contract checkout with an isolated configuration.
 // The only model input is a bounded, hash-checked source/report bundle.
 func reviewReport(ctx context.Context, r *Report, executable, model string) error {
@@ -48,25 +54,48 @@ func reviewReportWithProvider(ctx context.Context, r *Report, provider, executab
 	if len(r.Sources) == 0 {
 		return fmt.Errorf("AI review requires source evidence")
 	}
-	bundle := struct {
-		Scope    string            `json:"scope"`
-		Findings []Finding         `json:"findings"`
-		Sources  map[string]Source `json:"sources"`
-		Risk     *RiskRun          `json:"risk,omitempty"`
-	}{r.Scope, r.Findings, r.Sources, r.Risk}
-	payload, err := json.Marshal(bundle)
-	if err != nil {
-		return err
+	reviews := make([]*Review, len(r.Findings))
+	for start := 0; start < len(r.Findings); {
+		end := start + maxReviewBatchFindings
+		if end > len(r.Findings) {
+			end = len(r.Findings)
+		}
+		var payload []byte
+		for end > start {
+			bundle := struct {
+				Scope    string            `json:"scope"`
+				Findings []Finding         `json:"findings"`
+				Sources  map[string]Source `json:"sources"`
+				Risk     *RiskRun          `json:"risk,omitempty"`
+			}{r.Scope, r.Findings[start:end], r.Sources, r.Risk}
+			var err error
+			payload, err = json.Marshal(bundle)
+			if err != nil {
+				return err
+			}
+			if len(payload) <= maxReviewPayloadBytes {
+				break
+			}
+			end--
+		}
+		if end == start {
+			return fmt.Errorf("review payload exceeds 256 KB for one finding; narrow the audit target")
+		}
+		stdout, err := runProvider(ctx, provider, executable, model, reviewPrompt+string(payload))
+		if err != nil {
+			return fmt.Errorf("AI review batch %d-%d: %w", start+1, end, err)
+		}
+		batch := Report{Findings: append([]Finding(nil), r.Findings[start:end]...)}
+		if err := applyReviews(&batch, stdout); err != nil {
+			return fmt.Errorf("AI review batch %d-%d: %w", start+1, end, err)
+		}
+		for i := range batch.Findings {
+			reviews[start+i] = batch.Findings[i].Review
+		}
+		start = end
 	}
-	if len(payload) > 256000 {
-		return fmt.Errorf("review payload exceeds 256 KB; narrow the audit target")
-	}
-	stdout, err := runProvider(ctx, provider, executable, model, reviewPrompt+string(payload))
-	if err != nil {
-		return err
-	}
-	if err = applyReviews(r, stdout); err != nil {
-		return err
+	for i := range r.Findings {
+		r.Findings[i].Review = reviews[i]
 	}
 	r.Model = model
 	r.Provider = provider

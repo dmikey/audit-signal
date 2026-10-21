@@ -60,7 +60,7 @@ To search for flaws beyond Slither's detectors, run `discover` after the static 
 ./bin/audit-signal publish --report reports/report.json --repo owner/private-contracts
 ```
 
-AI review consumes a bounded source bundle (48 KB by default). It excludes vendor/build directories (`node_modules`, `lib`, `out`, `cache`, `artifacts`) and ignores symlinks. An oversized bundle fails explicitly; narrow the target or raise `--max-source-bytes`. The serialized review payload is capped at 256 KB. Each Slither finding must receive exactly one valid review. Invalid, incomplete or failed AI output leaves the original Slither report available and prevents normal publication.
+AI review consumes a bounded source bundle (48 KB by default). It excludes vendor/build directories (`node_modules`, `lib`, `out`, `cache`, `artifacts`) and ignores symlinks. An oversized bundle fails explicitly; narrow the target or raise `--max-source-bytes`. Reviews run in batches of up to eight findings, with the full bounded source bundle sent to the selected provider for each batch. Each serialized batch is capped at 256 KB; larger source bundles still need a narrower target. Every finding must receive exactly one valid review before the report is marked reviewed. Invalid, incomplete or failed AI output leaves the original Slither report available and prevents normal publication. Multiple batches consume more provider requests and may repeat private source in those requests.
 
 ## Use in GitHub CI/CD
 
