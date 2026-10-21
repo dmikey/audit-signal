@@ -157,6 +157,7 @@ func riskCommand(ctx context.Context, args []string, w io.Writer) error {
 	r.Risk = &risk
 	r.Reviewed = false
 	r.Model = ""
+	r.Provider = ""
 	for i := range r.Findings {
 		r.Findings[i].Review = nil
 	}

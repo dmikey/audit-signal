@@ -1,10 +1,10 @@
 # slither-agent
 
-A portable Go binary that runs [Slither](https://github.com/crytic/slither), searches source for additional issues with **GitHub Copilot**, reviews all findings, and creates deduplicated GitHub security issues. Intended for private smart contract repositories, including Foundry, Hardhat and standalone Solidity/Vyper targets.
+A portable Go binary that runs [Slither](https://github.com/crytic/slither), searches source for additional issues with **Copilot, OpenAI, or Anthropic**, reviews all findings, and creates deduplicated GitHub security issues. Intended for private smart contract repositories, including Foundry, Hardhat and standalone Solidity/Vyper targets.
 
 The [scanner strategy and benchmark plan](docs/SCANNER_STRATEGY.md) compares the main alternatives and defines how we will measure detection quality, proof, coverage and false positives.
 
-No OpenAI API key is required. The Go binary has no third-party Go dependencies. Python/Slither and Copilot CLI remain external runtime dependencies; they are not embedded in the binary.
+Copilot remains the default, with no provider API key required when Copilot access is available. OpenAI and Anthropic are optional bring-your-own-key choices. The Go binary has no third-party Go dependencies. Python/Slither and the Copilot CLI remain external runtime dependencies; the CLI is only needed for Copilot.
 
 ## Example audit
 
@@ -39,6 +39,15 @@ Use the project root as `--target` when compilation depends on Foundry/Hardhat c
 
 `audit` defaults to AI review. Use `--ai none` for a Slither-only run. `review --report ...` adds AI review to an existing report. `audit --input slither.json --target ... --scope ...` imports Slither output and marks the report as imported. Imported output must correspond to the supplied source; the tool cannot independently establish its provenance.
 
+To use a preferred provider and model locally, set its API key in the environment and select both flags. The key is read by the review process and is never written to reports. `auto` is supported only with Copilot; use a model ID your chosen provider accepts. The scanner sends the bounded source bundle and findings to that provider's API, so check its data handling terms before auditing private code.
+
+```sh
+export OPENAI_API_KEY='your-key-from-a-secret-manager'
+./bin/slither-agent audit --target contracts --scope owner/contracts \
+  --provider openai --model YOUR_OPENAI_MODEL
+# Or: ANTHROPIC_API_KEY with --provider anthropic --model YOUR_ANTHROPIC_MODEL
+```
+
 To search for flaws beyond Slither's detectors, run `discover` after the static audit, then `review` before publication. Discovery requires exact source file, line and excerpt evidence for each candidate. A new discovery clears any prior review, and the reviewer evaluates all findings together. The model may miss flaws or propose false positives; a line match establishes provenance, not exploitability. To make a discovery concrete, add a project-specific Foundry test and map its source file and line in the risk plan; this survives model-generated check-name changes.
 
 ```sh
@@ -69,7 +78,7 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.4.0
+    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.5.0
     with:
       target: '.'
       solc-version: '0.8.28'
@@ -89,7 +98,26 @@ jobs:
     #   COPILOT_TOKEN: ${{ secrets.COPILOT_TOKEN }}
 ```
 
-The reusable workflow runs optional local risk tests after scanning/building, then discovers source-level candidates and reviews all findings in a separate job before issue publication. The contract checkout has no persisted credentials. Only the review job receives Copilot credentials; only the publisher receives issue-write permission. The reviewer runs from an empty temporary directory, disables repository instructions and built-in MCPs, and exposes no model tools. Source and detector text are treated as untrusted evidence. Project setup still executes code, so run this on trusted revisions, not `pull_request_target` with fork code. For Foundry, install `forge` in your trusted `setup-command` before `forge install`; choose versions appropriate for your project.
+For a provider key, add `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` under the **private caller repository's** Settings → Secrets and variables → Actions. Then select the provider and model in the same workflow:
+
+```yaml
+jobs:
+  audit:
+    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.5.0
+    with:
+      provider: openai # or anthropic
+      model: YOUR_PROVIDER_MODEL_ID
+      agent-ref: v0.5.0
+      target: '.'
+      publish: false
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # For Anthropic instead: ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+Use one provider secret at a time. GitHub passes it only to the review job and only when that provider is selected. OpenAI requests disable response storage and model tools; Anthropic requests include no tools. The tool never logs provider responses on API failure and refuses redirects. Offline tests cover both adapters; live use depends on your own key, model access and provider billing.
+
+The reusable workflow runs optional local risk tests after scanning/building, then discovers source-level candidates and reviews all findings in a separate job before issue publication. The contract checkout has no persisted credentials. Only the review job receives the selected AI credential; only the publisher receives issue-write permission. The Copilot reviewer runs from an empty temporary directory, disables repository instructions and built-in MCPs, and exposes no model tools. Source and detector text are treated as untrusted evidence. Project setup still executes code, so run this on trusted revisions, not `pull_request_target` with fork code. For Foundry, install `forge` in your trusted `setup-command` before `forge install`; choose versions appropriate for your project.
 
 Reports include source code and may include security-sensitive evidence. Artifacts expire after one day and inherit the caller repository's visibility. Keep this workflow in the private contract repository; do not dispatch private Playmos audits in this public tool repository. A repository-scoped `GITHUB_TOKEN` cannot read or publish to an unrelated private repo; run in that repo or supply separately scoped credentials for a custom integration.
 

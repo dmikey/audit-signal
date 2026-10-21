@@ -62,21 +62,23 @@ type Source struct {
 	Content string `json:"content"`
 }
 type Report struct {
-	Version        int               `json:"version"`
-	Scope          string            `json:"scope"`
-	Target         string            `json:"target"`
-	Revision       string            `json:"revision,omitempty"`
-	Dirty          bool              `json:"dirty"`
-	Imported       bool              `json:"imported"`
-	CreatedAt      string            `json:"created_at"`
-	SlitherVersion string            `json:"slither_version"`
-	Model          string            `json:"model,omitempty"`
-	DiscoveryModel string            `json:"discovery_model,omitempty"`
-	Discovered     bool              `json:"discovered,omitempty"`
-	Reviewed       bool              `json:"reviewed"`
-	Findings       []Finding         `json:"findings"`
-	Sources        map[string]Source `json:"sources"`
-	Risk           *RiskRun          `json:"risk,omitempty"`
+	Version           int               `json:"version"`
+	Scope             string            `json:"scope"`
+	Target            string            `json:"target"`
+	Revision          string            `json:"revision,omitempty"`
+	Dirty             bool              `json:"dirty"`
+	Imported          bool              `json:"imported"`
+	CreatedAt         string            `json:"created_at"`
+	SlitherVersion    string            `json:"slither_version"`
+	Model             string            `json:"model,omitempty"`
+	Provider          string            `json:"provider,omitempty"`
+	DiscoveryModel    string            `json:"discovery_model,omitempty"`
+	DiscoveryProvider string            `json:"discovery_provider,omitempty"`
+	Discovered        bool              `json:"discovered,omitempty"`
+	Reviewed          bool              `json:"reviewed"`
+	Findings          []Finding         `json:"findings"`
+	Sources           map[string]Source `json:"sources"`
+	Risk              *RiskRun          `json:"risk,omitempty"`
 }
 type slitherOutput struct {
 	Success *bool           `json:"success"`
@@ -231,7 +233,7 @@ func saveReport(dir string, r Report) error {
 		return err
 	}
 	var md strings.Builder
-	fmt.Fprintf(&md, "# Smart contract audit\n\nScope: `%s`\n\nRevision: `%s` (dirty: %t)\n\nSlither: `%s`; AI model: `%s`; AI reviewed: %t; AI discovery: %t; discovery model: `%s`; imported: %t\n\nAutomated findings require human validation. Executed risk tests establish only recorded local harness outcomes, not production safety or a complete security audit. AI source coverage: %d files; dependency/vendor directories are excluded.\n\n%d findings\n\n", r.Scope, r.Revision, r.Dirty, r.SlitherVersion, r.Model, r.Reviewed, r.Discovered, r.DiscoveryModel, r.Imported, len(r.Sources), len(r.Findings))
+	fmt.Fprintf(&md, "# Smart contract audit\n\nScope: `%s`\n\nRevision: `%s` (dirty: %t)\n\nSlither: `%s`; AI provider: `%s`; AI model: `%s`; AI reviewed: %t; AI discovery: %t; discovery provider: `%s`; discovery model: `%s`; imported: %t\n\nAutomated findings require human validation. Executed risk tests establish only recorded local harness outcomes, not production safety or a complete security audit. AI source coverage: %d files; dependency/vendor directories are excluded.\n\n%d findings\n\n", r.Scope, r.Revision, r.Dirty, r.SlitherVersion, r.Provider, r.Model, r.Reviewed, r.Discovered, r.DiscoveryProvider, r.DiscoveryModel, r.Imported, len(r.Sources), len(r.Findings))
 	if r.Risk != nil {
 		md.WriteString(riskMarkdown(r, ""))
 	}
@@ -253,6 +255,22 @@ func loadReport(path string) (Report, error) {
 	}
 	if r.Version != 1 || r.Scope == "" || r.Findings == nil {
 		return r, fmt.Errorf("unsupported or incomplete report")
+	}
+	if r.Reviewed && r.Provider == "" {
+		r.Provider = "copilot"
+	}
+	if r.Discovered && r.DiscoveryProvider == "" {
+		r.DiscoveryProvider = "copilot"
+	}
+	if r.Reviewed && r.Model != "" {
+		if err := validateProvider(r.Provider, r.Model); err != nil {
+			return r, err
+		}
+	}
+	if r.Discovered {
+		if err := validateProvider(r.DiscoveryProvider, r.DiscoveryModel); err != nil {
+			return r, err
+		}
 	}
 	seen := map[string]bool{}
 	for _, f := range r.Findings {
@@ -315,7 +333,7 @@ func loadReport(path string) (Report, error) {
 func findingEvidenceLayers(r Report, f Finding) []EvidenceLayer {
 	layers := make([]EvidenceLayer, 0, 3)
 	if f.Origin == "ai-discovery" {
-		layers = append(layers, EvidenceLayer{Stage: "discovery", Tool: "copilot", Model: r.DiscoveryModel, Status: "candidate", Check: f.Check})
+		layers = append(layers, EvidenceLayer{Stage: "discovery", Tool: effectiveProvider(r.DiscoveryProvider), Model: r.DiscoveryModel, Status: "candidate", Check: f.Check})
 	} else {
 		status := "detected"
 		version := ""
@@ -328,7 +346,7 @@ func findingEvidenceLayers(r Report, f Finding) []EvidenceLayer {
 		layers = append(layers, EvidenceLayer{Stage: "detection", Tool: f.Origin, Version: version, Status: status, Check: f.Check})
 	}
 	if f.Review != nil {
-		layers = append(layers, EvidenceLayer{Stage: "review", Tool: "copilot", Model: r.Model, Status: f.Review.Verdict})
+		layers = append(layers, EvidenceLayer{Stage: "review", Tool: effectiveProvider(r.Provider), Model: r.Model, Status: f.Review.Verdict})
 	}
 	if r.Risk == nil {
 		return append(layers, EvidenceLayer{Stage: "dynamic-test", Status: "not-run"})
@@ -352,6 +370,13 @@ func findingEvidenceLayers(r Report, f Finding) []EvidenceLayer {
 		layers = append(layers, EvidenceLayer{Stage: "dynamic-test", Status: status})
 	}
 	return layers
+}
+
+func effectiveProvider(provider string) string {
+	if provider == "" {
+		return "copilot"
+	} // Reports written before provider attribution.
+	return provider
 }
 
 func evidenceLayersMarkdown(r Report, f Finding) string {

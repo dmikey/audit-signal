@@ -36,6 +36,13 @@ type candidate struct {
 }
 
 func discoverReport(ctx context.Context, r *Report, executable, model string) error {
+	return discoverReportWithProvider(ctx, r, "copilot", executable, model)
+}
+
+func discoverReportWithProvider(ctx context.Context, r *Report, provider, executable, model string) error {
+	if err := validateProvider(provider, model); err != nil {
+		return err
+	}
 	if model == "" || len(r.Sources) == 0 {
 		return fmt.Errorf("discovery requires a model and source evidence")
 	}
@@ -60,7 +67,7 @@ func discoverReport(ctx context.Context, r *Report, executable, model string) er
 	if len(payload) > 256000 {
 		return fmt.Errorf("discovery payload exceeds 256 KB; narrow the audit target")
 	}
-	response, err := runCopilot(ctx, executable, model, discoveryPrompt+string(payload))
+	response, err := runProvider(ctx, provider, executable, model, discoveryPrompt+string(payload))
 	if err != nil {
 		return err
 	}
@@ -77,8 +84,10 @@ func discoverReport(ctx context.Context, r *Report, executable, model string) er
 	})
 	r.Discovered = true
 	r.DiscoveryModel = model
+	r.DiscoveryProvider = provider
 	r.Reviewed = false
 	r.Model = ""
+	r.Provider = ""
 	for i := range r.Findings {
 		r.Findings[i].Review = nil
 	}

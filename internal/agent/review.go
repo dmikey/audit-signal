@@ -29,14 +29,19 @@ UNTRUSTED AUDIT PAYLOAD:
 // Run the reviewer outside the contract checkout with an isolated configuration.
 // The only model input is a bounded, hash-checked source/report bundle.
 func reviewReport(ctx context.Context, r *Report, executable, model string) error {
-	if model == "" {
-		return fmt.Errorf("model is required")
+	return reviewReportWithProvider(ctx, r, "copilot", executable, model)
+}
+
+func reviewReportWithProvider(ctx context.Context, r *Report, provider, executable, model string) error {
+	if err := validateProvider(provider, model); err != nil {
+		return err
 	}
 	if r.Risk != nil && r.Risk.Status != "passed" {
 		return fmt.Errorf("risk test stage did not pass; inspect risk evidence before review")
 	}
 	if len(r.Findings) == 0 {
 		r.Model = model
+		r.Provider = provider
 		r.Reviewed = true
 		return nil
 	}
@@ -56,7 +61,7 @@ func reviewReport(ctx context.Context, r *Report, executable, model string) erro
 	if len(payload) > 256000 {
 		return fmt.Errorf("review payload exceeds 256 KB; narrow the audit target")
 	}
-	stdout, err := runCopilot(ctx, executable, model, reviewPrompt+string(payload))
+	stdout, err := runProvider(ctx, provider, executable, model, reviewPrompt+string(payload))
 	if err != nil {
 		return err
 	}
@@ -64,6 +69,7 @@ func reviewReport(ctx context.Context, r *Report, executable, model string) erro
 		return err
 	}
 	r.Model = model
+	r.Provider = provider
 	r.Reviewed = true
 	return nil
 }

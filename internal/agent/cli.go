@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = "0.4.0"
+const Version = "0.5.0"
 const SlitherVersion = "0.11.6"
 const SolcSelectVersion = "1.2.0"
 
@@ -48,13 +48,13 @@ func Run(ctx context.Context, args []string, w io.Writer) error {
 	}
 }
 func help(w io.Writer) {
-	fmt.Fprintln(w, `slither-agent: Slither + GitHub Copilot smart contract audits
+	fmt.Fprintln(w, `slither-agent: Slither + AI smart contract audits
 
 Commands (use COMMAND --help for flags):
   setup    Install pinned Slither and solc-select into a local Python environment
-  audit    Run Slither, bundle sources, optionally review with Copilot, save report
-  review   AI-review an existing report using GitHub Copilot CLI
-  discover Search source for flaws that Slither may miss using GitHub Copilot CLI
+  audit    Run Slither, bundle sources, optionally review with AI, save report
+  review   AI-review an existing report
+  discover Search source for flaws that Slither may miss
   risk     Execute a mapped Foundry exploit/fuzz/risk test plan in a local EVM
   render   Rebuild Markdown and evidence-layer JSON from a saved report
   publish  Create/update deduplicated security issues from a reviewed report
@@ -65,7 +65,7 @@ Example:
   slither-agent audit --target contracts --scope owner/private-contracts --ai copilot
   slither-agent publish --report reports/report.json --repo owner/private-contracts
 
-No issues are written until publish runs. GitHub Copilot access is required for AI review.`)
+No issues are written until publish runs. AI providers: copilot, openai, anthropic.`)
 }
 
 func flags(name string, w io.Writer) *flag.FlagSet {
@@ -157,8 +157,9 @@ func audit(ctx context.Context, args []string, w io.Writer) error {
 	scope := f.String("scope", "", "Stable identity, e.g. owner/repo:contracts (required)")
 	out := f.String("out", "reports", "Report directory")
 	input := f.String("input", "", "Import existing Slither JSON instead of executing Slither")
-	ai := f.String("ai", "copilot", "copilot or none")
-	model := f.String("model", "auto", "Copilot model ID, or auto")
+	ai := f.String("ai", "copilot", "copilot or none (legacy alias for --provider copilot)")
+	provider := f.String("provider", "copilot", "AI provider: copilot, openai, anthropic")
+	model := f.String("model", "auto", "Model ID; auto only for Copilot")
 	copilot := f.String("copilot", "copilot", "Copilot CLI executable")
 	venv := f.String("venv", ".slither-venv", "Python environment directory")
 	slither := f.String("slither", "", "Slither executable; defaults to local venv then PATH")
@@ -170,6 +171,11 @@ func audit(ctx context.Context, args []string, w io.Writer) error {
 	}
 	if *scope == "" || (*ai != "none" && *ai != "copilot") || *sourceLimit < 1 || *timeout <= 0 {
 		return fmt.Errorf("require --scope, --ai copilot|none, and positive limits")
+	}
+	if *ai != "none" {
+		if err := validateProvider(*provider, *model); err != nil {
+			return err
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
@@ -271,13 +277,13 @@ func audit(ctx context.Context, args []string, w io.Writer) error {
 	}
 	fmt.Fprintf(w, "Slither: %d findings. Reports saved to %s\n", len(r.Findings), *out)
 	if *ai == "copilot" {
-		if err = reviewReport(ctx, &r, *copilot, *model); err != nil {
+		if err = reviewReportWithProvider(ctx, &r, *provider, *copilot, *model); err != nil {
 			return err
 		}
 		if err = saveReport(*out, r); err != nil {
 			return err
 		}
-		fmt.Fprintln(w, "Copilot review complete.")
+		fmt.Fprintf(w, "%s review complete.\n", *provider)
 	}
 	return nil
 }
@@ -286,7 +292,8 @@ func reviewCommand(ctx context.Context, args []string, w io.Writer) error {
 	f := flags("review", w)
 	path := f.String("report", "reports/report.json", "Input report")
 	out := f.String("out", "reports", "Output directory")
-	model := f.String("model", "auto", "Copilot model ID")
+	model := f.String("model", "auto", "Model ID; auto only for Copilot")
+	provider := f.String("provider", "copilot", "AI provider: copilot, openai, anthropic")
 	copilot := f.String("copilot", "copilot", "Copilot CLI executable")
 	timeout := f.Duration("timeout", 10*time.Minute, "Review timeout")
 	if err := parse(f, args); err != nil {
@@ -301,13 +308,13 @@ func reviewCommand(ctx context.Context, args []string, w io.Writer) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
-	if err = reviewReport(ctx, &r, *copilot, *model); err != nil {
+	if err = reviewReportWithProvider(ctx, &r, *provider, *copilot, *model); err != nil {
 		return err
 	}
 	if err = saveReport(*out, r); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "Copilot reviewed %d findings; saved to %s\n", len(r.Findings), *out)
+	fmt.Fprintf(w, "%s reviewed %d findings; saved to %s\n", *provider, len(r.Findings), *out)
 	return nil
 }
 
@@ -315,7 +322,8 @@ func discoverCommand(ctx context.Context, args []string, w io.Writer) error {
 	f := flags("discover", w)
 	path := f.String("report", "reports/report.json", "Input Slither report")
 	out := f.String("out", "reports", "Output directory")
-	model := f.String("model", "auto", "Copilot model ID")
+	model := f.String("model", "auto", "Model ID; auto only for Copilot")
+	provider := f.String("provider", "copilot", "AI provider: copilot, openai, anthropic")
 	copilot := f.String("copilot", "copilot", "Copilot CLI executable")
 	timeout := f.Duration("timeout", 10*time.Minute, "Discovery timeout")
 	if err := parse(f, args); err != nil {
@@ -330,7 +338,7 @@ func discoverCommand(ctx context.Context, args []string, w io.Writer) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
-	if err = discoverReport(ctx, &r, *copilot, *model); err != nil {
+	if err = discoverReportWithProvider(ctx, &r, *provider, *copilot, *model); err != nil {
 		return err
 	}
 	if err = saveReport(*out, r); err != nil {

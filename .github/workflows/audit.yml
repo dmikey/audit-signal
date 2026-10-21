@@ -15,9 +15,13 @@ on:
         type: string
         default: ''
       model:
-        description: Copilot model ID or auto
+        description: Provider model ID; auto only for Copilot
         type: string
         default: auto
+      provider:
+        description: AI provider (copilot, openai, or anthropic)
+        type: string
+        default: copilot
       node-version:
         description: Patched Node.js version for project setup and Copilot CLI
         type: string
@@ -50,10 +54,16 @@ on:
       agent-ref:
         description: Tool revision; pin to a reviewed commit for production
         type: string
-        default: v0.4.0
+        default: v0.5.0
     secrets:
       COPILOT_TOKEN:
         description: Optional PAT with Copilot Requests; needed for personal repositories
+        required: false
+      OPENAI_API_KEY:
+        description: OpenAI API key, used only when provider is openai
+        required: false
+      ANTHROPIC_API_KEY:
+        description: Anthropic API key, used only when provider is anthropic
         required: false
 
 # The caller must grant copilot-requests: write for GITHUB_TOKEN authentication.
@@ -153,31 +163,39 @@ jobs:
           go-version: '1.24.x'
           cache: false
       - uses: actions/setup-node@v6
+        if: inputs.provider == 'copilot'
         with:
           node-version: ${{ inputs.node-version }}
       - uses: actions/download-artifact@v5
         with:
           name: slither-source-evidence
           path: scan-report
-      - run: |
-          go build -trimpath -o bin/slither-agent ./cmd/slither-agent
-          npm install -g @github/copilot@1.0.97
-      - name: Discover source-level security candidates with Copilot
+      - run: go build -trimpath -o bin/slither-agent ./cmd/slither-agent
+      - name: Install Copilot CLI
+        if: inputs.provider == 'copilot'
+        run: npm install -g @github/copilot@1.0.97
+      - name: Discover source-level security candidates
         if: inputs.discover
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_TOKEN }}
+          GITHUB_TOKEN: ${{ inputs.provider == 'copilot' && github.token || '' }}
+          COPILOT_GITHUB_TOKEN: ${{ inputs.provider == 'copilot' && secrets.COPILOT_TOKEN || '' }}
+          OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+          PROVIDER: ${{ inputs.provider }}
           MODEL: ${{ inputs.model }}
-        run: ./bin/slither-agent discover --report scan-report/report.json --out reviewed-report --model "$MODEL"
-      - name: Review all findings with Copilot (no model tools)
+        run: ./bin/slither-agent discover --report scan-report/report.json --out reviewed-report --provider "$PROVIDER" --model "$MODEL"
+      - name: Review all findings with AI (no model tools)
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_TOKEN }}
+          GITHUB_TOKEN: ${{ inputs.provider == 'copilot' && github.token || '' }}
+          COPILOT_GITHUB_TOKEN: ${{ inputs.provider == 'copilot' && secrets.COPILOT_TOKEN || '' }}
+          OPENAI_API_KEY: ${{ inputs.provider == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
+          PROVIDER: ${{ inputs.provider }}
           MODEL: ${{ inputs.model }}
           DISCOVER: ${{ inputs.discover }}
         run: |
           if [ "$DISCOVER" = true ]; then report=reviewed-report/report.json; else report=scan-report/report.json; fi
-          ./bin/slither-agent review --report "$report" --out reviewed-report --model "$MODEL"
+          ./bin/slither-agent review --report "$report" --out reviewed-report --provider "$PROVIDER" --model "$MODEL"
       - uses: actions/upload-artifact@v4
         with:
           name: reviewed-security-report
