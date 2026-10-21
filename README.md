@@ -100,7 +100,8 @@ Set `ai: none` for a static audit with no model access. For the default Copilot 
 To record an existing local test suite in the same report, set `suite-project`
 to `contracts` and `suite-command-json` to a JSON argument array such as
 `["./node_modules/.bin/hardhat","test","--network","hardhat"]`. The action
-exposes `suite-log` for a short-lived private artifact. It runs before Copilot's
+exposes `suite-log` and `report-directory` even when the suite fails, so an
+`always()` artifact step can retain diagnostics briefly. It runs before Copilot's
 Node version is installed, so the caller's project toolchain is retained for
 compilation and tests. Suite results are project-level evidence only.
 
