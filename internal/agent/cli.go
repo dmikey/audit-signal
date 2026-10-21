@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = "0.8.0"
+const Version = "0.9.0"
 const SlitherVersion = "0.11.6"
 const SolcSelectVersion = "1.2.0"
 
@@ -39,6 +39,8 @@ func Run(ctx context.Context, args []string, w io.Writer) error {
 		return discoverCommand(ctx, args[1:], w)
 	case "risk":
 		return riskCommand(ctx, args[1:], w)
+	case "assure":
+		return assureCommand(args[1:], w)
 	case "render":
 		return renderCommand(args[1:], w)
 	case "gate":
@@ -58,6 +60,7 @@ Commands (use COMMAND --help for flags):
   review   AI-review an existing report
   discover Search source for flaws that Slither may miss
   risk     Execute a mapped Foundry exploit/fuzz/risk test plan in a local EVM
+  assure   Map protocol invariants to audited sources and local test evidence
   render   Rebuild Markdown and evidence-layer JSON from a saved report
   gate     Apply a versioned merge policy and accepted-finding baseline
   publish  Create/update deduplicated security issues from a reviewed report

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "minimum_severity": "High",
+  "evidence": "slither-detected",
+  "allow_imported": false,
+  "allow_dirty": false,
+  "require_assurance": true,
+  "minimum_invariant_severity": "High"
+}

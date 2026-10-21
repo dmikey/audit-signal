@@ -8,6 +8,8 @@ The [risk plan](risk/reward-plan.json) maps the discovery to that exact test. Th
 
 This example runs real Slither against [VulnerableVault.sol](VulnerableVault.sol), an intentionally vulnerable ETH vault. The committed [Markdown report](reports/vulnerable-vault/report.md) and [JSON report](reports/vulnerable-vault/report.json) show the output from Slither 0.11.6 and Solidity 0.8.28.
 
+The [protocol intent manifests](intent/vault-vulnerable.json) map the vault's security promises to audited source paths. CI runs mapped Foundry tests for this vulnerable contract and the [repaired fixture](risk/src/FixedVault.sol), then writes assurance and merge-gate artifacts. Fund isolation is a reproduced local counterexample here and a passing local property in the repaired fixture; a lower-priority deposit-accounting rule stays visibly unmapped. See the [assurance workflow](../README.md#protocol-assurance-map) for reproduction and evidence limits.
+
 **Execution status:** static analysis, local EVM exploit/risk tests and live GPT-5.4 Copilot review completed; the reentrancy example is [GitHub issue #1](https://github.com/dmikey/audit-signal/issues/1). The walkthrough below explains the source code; it is not output from the Copilot review stage. Never deploy this fixture.
 
 ## Findings

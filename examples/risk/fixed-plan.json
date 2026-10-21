@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "cases": [
+    {"invariant_ids":["depositor-funds-isolated"],"subject_source":"examples/risk/src/FixedVault.sol","suite":"test/VaultRisk.t.sol:VaultRiskTest","test":"test_FixedVaultBlocksSameAttack()","claim":"risk-property","description":"The callback receives only its own deposit while the victim's funds remain available."},
+    {"invariant_ids":["depositor-funds-isolated"],"subject_source":"examples/risk/src/FixedVault.sol","suite":"test/VaultRisk.t.sol:VaultRiskTest","test":"testFuzz_FixedVaultPreservesVictimFunds(uint96,uint8)","claim":"risk-property","description":"Fuzz deposit amounts and callback counts while preserving victim funds."},
+    {"invariant_ids":["failed-transfer-keeps-credit"],"subject_source":"examples/risk/src/FixedVault.sol","suite":"test/VaultRisk.t.sol:VaultRiskTest","test":"test_FailedTransferRestoresCredit()","claim":"risk-property","description":"A rejecting recipient cannot lose its recorded withdrawal credit."}
+  ]
+}

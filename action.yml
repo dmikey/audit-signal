@@ -43,6 +43,9 @@ inputs:
   baseline-file:
     description: Optional caller-repository accepted-finding baseline JSON
     default: ''
+  intent-file:
+    description: Optional reviewed protocol intent JSON for invariant assurance
+    default: ''
 outputs:
   report-json:
     description: Absolute path to the machine-readable report
@@ -56,6 +59,12 @@ outputs:
   gate-markdown:
     description: Absolute path to the policy decision Markdown when enabled
     value: ${{ steps.report.outputs.gate-markdown }}
+  assurance-json:
+    description: Absolute path to the protocol assurance JSON when enabled
+    value: ${{ steps.report.outputs.assurance-json }}
+  assurance-markdown:
+    description: Absolute path to the protocol assurance Markdown when enabled
+    value: ${{ steps.report.outputs.assurance-markdown }}
 runs:
   using: composite
   steps:
@@ -69,6 +78,7 @@ runs:
         MODEL: ${{ inputs.model }}
         POLICY_FILE: ${{ inputs.policy-file }}
         BASELINE_FILE: ${{ inputs.baseline-file }}
+        INTENT_FILE: ${{ inputs.intent-file }}
       run: |
         set -euo pipefail
         if [[ "$RUNNER_OS" != Linux && "$RUNNER_OS" != macOS ]]; then
@@ -169,11 +179,21 @@ runs:
       env:
         POLICY_FILE: ${{ inputs.policy-file }}
         BASELINE_FILE: ${{ inputs.baseline-file }}
+        INTENT_FILE: ${{ inputs.intent-file }}
       run: |
         set -euo pipefail
         args=(--report "$AUDIT_SIGNAL_REPORT/report.json" --policy "$POLICY_FILE" --expected-revision "$GITHUB_SHA" --out "$AUDIT_SIGNAL_REPORT")
         if [[ -n "$BASELINE_FILE" ]]; then args+=(--baseline "$BASELINE_FILE"); fi
+        if [[ -n "$INTENT_FILE" ]]; then args+=(--intent "$INTENT_FILE"); fi
         "$AUDIT_SIGNAL_BIN" gate "${args[@]}"
+    - name: Map protocol assurance without a merge policy
+      if: inputs.intent-file != '' && inputs.policy-file == ''
+      shell: bash
+      env:
+        INTENT_FILE: ${{ inputs.intent-file }}
+      run: |
+        "$AUDIT_SIGNAL_BIN" assure --report "$AUDIT_SIGNAL_REPORT/report.json" \
+          --intent "$INTENT_FILE" --out "$AUDIT_SIGNAL_REPORT"
     - name: Expose report paths
       id: report
       if: always()
@@ -183,3 +203,5 @@ runs:
         echo "report-markdown=$AUDIT_SIGNAL_REPORT/report.md" >> "$GITHUB_OUTPUT"
         echo "gate-json=$AUDIT_SIGNAL_REPORT/gate.json" >> "$GITHUB_OUTPUT"
         echo "gate-markdown=$AUDIT_SIGNAL_REPORT/gate.md" >> "$GITHUB_OUTPUT"
+        echo "assurance-json=$AUDIT_SIGNAL_REPORT/assurance.json" >> "$GITHUB_OUTPUT"
+        echo "assurance-markdown=$AUDIT_SIGNAL_REPORT/assurance.md" >> "$GITHUB_OUTPUT"

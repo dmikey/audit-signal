@@ -66,7 +66,7 @@ AI review consumes a bounded source bundle (48 KB by default). It excludes vendo
 
 ### One-step installable action
 
-After checkout, add `uses: dmikey/audit-signal@v0.8.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
+After checkout, add `uses: dmikey/audit-signal@v0.9.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
 
 ```yaml
 name: Smart contract audit
@@ -82,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
       - id: scan
-        uses: dmikey/audit-signal@v0.8.0
+        uses: dmikey/audit-signal@v0.9.0
         with:
           target: '.'
           solc-version: '0.8.28'
@@ -117,7 +117,7 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.8.0
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.9.0
     with:
       target: '.'
       solc-version: '0.8.28'
@@ -142,11 +142,11 @@ For a provider key, add `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` under the **priv
 ```yaml
 jobs:
   audit:
-    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.8.0
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.9.0
     with:
       provider: openai # or anthropic
       model: YOUR_PROVIDER_MODEL_ID
-      agent-ref: v0.8.0
+      agent-ref: v0.9.0
       target: '.'
       publish: false
     secrets:
@@ -177,6 +177,26 @@ Use Foundry v1.8.5 or a version supporting `forge test --json-file`. Compilation
 Reports retain the exact test status, fuzz/invariant execution metadata, harness/config hashes, plan hash, Foundry version and finding IDs without dynamic coverage. Raw `forge-results.json` and `risk.log` are saved beside the reports. Missing/skipped mapped tests, failed tests, malformed output and execution errors fail the stage and block normal review/publication; existing AI review is invalidated before execution. Tests that prove an exploit works should assert the observed loss and pass when it is reproduced. A remediation fixture passing does not repair the original audited contract.
 
 The workflow enables this stage when `risk-project` is set; otherwise dynamic testing is skipped. Its risk stage runs before AI discovery, so tests for newly discovered candidates need a subsequent manual `risk` run or a project-specific workflow adjustment. Run only trusted local suites: FFI and filesystem cheatcode permissions are disabled and credentials are removed from the test process, but Forge is not a complete network sandbox. This tool does not provide RPC endpoints, private keys, deploy contracts or broadcast transactions. A suite with explicit fork/RPC calls would need separate authorization and isolation. No live-chain penetration testing is included.
+
+## Protocol assurance map
+
+Check a reviewed intent manifest into the contract repository to describe the assets, roles, assumptions, and security invariants that matter to the protocol. [The vulnerable vault manifest](examples/intent/vault-vulnerable.json) shows the version 1 JSON schema. Each invariant has an ID, severity, statement, and exact audited source paths. The manifest's `scope` must equal the report scope. The scanner rejects unknown references, duplicate IDs, path traversal, and test mappings to a different audited source.
+
+Add `invariant_ids` and `subject_source` to cases in the [Foundry risk plan](examples/risk/plan.json). The plan's subject binding is a reviewed claim about what a test exercises; the scanner verifies that source is in the audited bundle and records its hash alongside the harness hash, plan hash, Forge version, and a targeted replay command. The replay may require the recorded compiler and fuzz settings. It cannot infer that arbitrary test code actually asserts the invariant, so security reviewers must inspect the harness. A test on a repaired fixture is never credited to the vulnerable source.
+
+```sh
+audit-signal assure --report reports/report.json \
+  --intent .audit-signal/intent.json --out reports
+audit-signal gate --report reports/report.json \
+  --policy .audit-signal/policy.json --intent .audit-signal/intent.json \
+  --expected-revision "$(git rev-parse HEAD)" --out reports
+```
+
+`assurance.json` and `assurance.md` distinguish `checked-local` (mapped assertions passed), `counterexample-local` (a mapped exploit-reproduction test passed), `unmapped`, `untested`, `out-of-scope`, and failed or skipped test stages. Unmapped and untested invariants receive a suggested Foundry test outline for human review; it is not an executable or AI-generated test. Passing local checks is not formal verification or a claim about deployed contracts.
+
+Set `require_assurance: true` and `minimum_invariant_severity` in the policy to block gaps or counterexamples at that severity or higher. [The example assurance policy](examples/intent/policy.json) blocks High invariants without `checked-local` evidence. Accepted-finding baselines do not waive invariants. Both the installable Action and reusable workflow accept `intent-file`; without a policy they still emit an assurance map, and with a policy they include invariant decisions in `gate.json`. The installable Action only scans, so its map starts as `untested` unless a caller runs `risk` before a separate `assure`/`gate` invocation. The reusable workflow can run Foundry first when `risk-project` is set.
+
+CI exercises the [vulnerable](examples/intent/vault-vulnerable.json) and [repaired](examples/intent/vault-fixed.json) vaults with real Slither and Foundry. The vulnerable vault's High fund-isolation invariant is a local counterexample and blocks the gate. The repaired vault's corresponding local tests pass; a lower-priority deposit-accounting invariant remains visibly unmapped. These are fixture outcomes, not production certification.
 
 ## Merge policy gate
 

@@ -9,17 +9,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 type RiskCase struct {
-	Check       string `json:"check"`
-	File        string `json:"file,omitempty"`
-	Line        int    `json:"line,omitempty"`
-	Suite       string `json:"suite"`
-	Test        string `json:"test"`
-	Claim       string `json:"claim"`
-	Description string `json:"description"`
+	Check         string   `json:"check"`
+	File          string   `json:"file,omitempty"`
+	Line          int      `json:"line,omitempty"`
+	InvariantIDs  []string `json:"invariant_ids,omitempty"`
+	SubjectSource string   `json:"subject_source,omitempty"`
+	Suite         string   `json:"suite"`
+	Test          string   `json:"test"`
+	Claim         string   `json:"claim"`
+	Description   string   `json:"description"`
 }
 type RiskEvidence struct {
 	RiskCase
@@ -31,6 +34,7 @@ type RiskEvidence struct {
 type RiskRun struct {
 	Status             string            `json:"status"`
 	Environment        string            `json:"environment"`
+	Project            string            `json:"project,omitempty"`
 	ForgeVersion       string            `json:"forge_version"`
 	StartedAt          string            `json:"started_at"`
 	PlanSHA256         string            `json:"plan_sha256"`
@@ -96,6 +100,19 @@ func riskCommand(ctx context.Context, args []string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	rootAbs, err := filepath.Abs(*sourceRoot)
+	if err != nil {
+		return err
+	}
+	projectRel, err := filepath.Rel(rootAbs, proj)
+	if err != nil || projectRel == ".." || strings.HasPrefix(projectRel, ".."+string(os.PathSeparator)) {
+		for _, c := range cases {
+			if len(c.InvariantIDs) > 0 {
+				return fmt.Errorf("invariant test project must be inside source root for replay")
+			}
+		}
+		projectRel = ""
+	}
 	harness, err := collectSources(proj, proj, 2*1024*1024)
 	if err != nil {
 		return err
@@ -152,7 +169,7 @@ func riskCommand(ctx context.Context, args []string, w io.Writer) error {
 	cmd.Env = env
 	cmd.Stdout = log
 	cmd.Stderr = log
-	risk := RiskRun{Status: "error", Environment: "local-evm", ForgeVersion: string(bytes.TrimSpace(ver)), StartedAt: time.Now().UTC().Format(time.RFC3339), PlanSHA256: digest(string(planData)), HarnessHashes: hashes, Evidence: []RiskEvidence{}, UntestedFindingIDs: []string{}}
+	risk := RiskRun{Status: "error", Environment: "local-evm", Project: filepath.ToSlash(projectRel), ForgeVersion: string(bytes.TrimSpace(ver)), StartedAt: time.Now().UTC().Format(time.RFC3339), PlanSHA256: digest(string(planData)), HarnessHashes: hashes, Evidence: []RiskEvidence{}, UntestedFindingIDs: []string{}}
 	// New evidence invalidates an earlier AI review, including when tests fail.
 	r.Risk = &risk
 	r.Reviewed = false
@@ -225,8 +242,32 @@ func parseRiskPlan(data []byte, r Report) ([]RiskCase, error) {
 				break
 			}
 		}
-		if (c.Check == "") == (c.File == "") || (c.Check != "" && c.Line != 0) || (c.File != "" && (c.Line < 1 || filepath.IsAbs(c.File) || c.File == ".." || c.File != filepath.ToSlash(filepath.Clean(c.File)) || len(c.File) >= 3 && c.File[:3] == "../")) || !matches || c.Suite == "" || c.Test == "" || c.Description == "" || (c.Claim != "exploit-reproduced" && c.Claim != "mitigation-holds" && c.Claim != "risk-property") {
+		selectorCount := 0
+		if c.Check != "" {
+			selectorCount++
+		}
+		if c.File != "" {
+			selectorCount++
+		}
+		if selectorCount > 1 || (selectorCount == 0 && len(c.InvariantIDs) == 0) || (selectorCount == 1 && !matches) || (c.Check != "" && c.Line != 0) || (c.File != "" && (c.Line < 1 || !safeSourcePath(c.File))) || c.Suite == "" || c.Test == "" || c.Description == "" || (c.Claim != "exploit-reproduced" && c.Claim != "mitigation-holds" && c.Claim != "risk-property") {
 			return nil, fmt.Errorf("invalid risk case or finding selector not present in report: %s", c.Test)
+		}
+		if len(c.InvariantIDs) > 0 {
+			if !safeSourcePath(c.SubjectSource) {
+				return nil, fmt.Errorf("invariant test %s requires a safe subject_source", c.Test)
+			}
+			if _, ok := r.Sources[c.SubjectSource]; !ok {
+				return nil, fmt.Errorf("invariant test %s subject_source is absent from audited sources", c.Test)
+			}
+			ids := map[string]bool{}
+			for _, id := range c.InvariantIDs {
+				if !validIntentID(id) || ids[id] {
+					return nil, fmt.Errorf("invalid or duplicate invariant ID in test %s", c.Test)
+				}
+				ids[id] = true
+			}
+		} else if c.SubjectSource != "" {
+			return nil, fmt.Errorf("subject_source requires invariant_ids in test %s", c.Test)
 		}
 		key := c.Suite + "\x00" + c.Test
 		if seen[key] {

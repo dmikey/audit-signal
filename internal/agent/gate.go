@@ -17,11 +17,13 @@ import (
 // in the caller repository. The evidence modes are alternatives, not an
 // implication that an AI verdict or a detector hit proves an exploit.
 type GatePolicy struct {
-	Version         int    `json:"version"`
-	MinimumSeverity string `json:"minimum_severity"`
-	Evidence        string `json:"evidence"`
-	AllowImported   bool   `json:"allow_imported"`
-	AllowDirty      bool   `json:"allow_dirty"`
+	Version                  int    `json:"version"`
+	MinimumSeverity          string `json:"minimum_severity"`
+	Evidence                 string `json:"evidence"`
+	AllowImported            bool   `json:"allow_imported"`
+	AllowDirty               bool   `json:"allow_dirty"`
+	RequireAssurance         bool   `json:"require_assurance,omitempty"`
+	MinimumInvariantSeverity string `json:"minimum_invariant_severity,omitempty"`
 }
 
 type GateAcceptance struct {
@@ -48,15 +50,24 @@ type GateDecision struct {
 }
 
 type GateResult struct {
-	Version       int            `json:"version"`
-	Scope         string         `json:"scope"`
-	Revision      string         `json:"revision,omitempty"`
-	Policy        GatePolicy     `json:"policy"`
-	Passed        bool           `json:"passed"`
-	Blocked       int            `json:"blocked"`
-	Accepted      int            `json:"accepted"`
-	NotActionable int            `json:"not_actionable"`
-	Decisions     []GateDecision `json:"decisions"`
+	Version            int                     `json:"version"`
+	Scope              string                  `json:"scope"`
+	Revision           string                  `json:"revision,omitempty"`
+	Policy             GatePolicy              `json:"policy"`
+	Passed             bool                    `json:"passed"`
+	Blocked            int                     `json:"blocked"`
+	Accepted           int                     `json:"accepted"`
+	NotActionable      int                     `json:"not_actionable"`
+	Decisions          []GateDecision          `json:"decisions"`
+	InvariantDecisions []GateInvariantDecision `json:"invariant_decisions,omitempty"`
+	Assurance          *AssuranceResult        `json:"assurance,omitempty"`
+}
+
+type GateInvariantDecision struct {
+	ID       string `json:"id"`
+	Severity string `json:"severity"`
+	Status   string `json:"status"`
+	Blocked  bool   `json:"blocked"`
 }
 
 func readStrictJSON(path string, value any) error {
@@ -82,6 +93,12 @@ func readStrictJSON(path string, value any) error {
 func validateGatePolicy(p GatePolicy) error {
 	if p.Version != 1 || !validSeverity(p.MinimumSeverity) {
 		return fmt.Errorf("policy requires version 1 and a valid minimum_severity")
+	}
+	if p.RequireAssurance && !validSeverity(p.MinimumInvariantSeverity) {
+		return fmt.Errorf("require_assurance needs a valid minimum_invariant_severity")
+	}
+	if !p.RequireAssurance && p.MinimumInvariantSeverity != "" {
+		return fmt.Errorf("minimum_invariant_severity requires require_assurance")
 	}
 	switch p.Evidence {
 	case "slither-detected", "ai-reviewed", "local-exploit-test":
@@ -185,6 +202,19 @@ func evaluateGate(r Report, p GatePolicy, baseline GateBaseline, today time.Time
 	return result, nil
 }
 
+func applyAssuranceGate(result *GateResult, assurance AssuranceResult) {
+	result.Assurance = &assurance
+	for _, invariant := range assurance.Invariants {
+		decision := GateInvariantDecision{ID: invariant.ID, Severity: invariant.Severity, Status: invariant.Status}
+		if result.Policy.RequireAssurance && rank(invariant.Severity) >= rank(result.Policy.MinimumInvariantSeverity) && invariant.Status != "checked-local" {
+			decision.Blocked = true
+			result.Blocked++
+		}
+		result.InvariantDecisions = append(result.InvariantDecisions, decision)
+	}
+	result.Passed = result.Blocked == 0
+}
+
 func saveGateResult(dir string, result GateResult) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -205,6 +235,12 @@ func saveGateResult(dir string, result GateResult) error {
 		}
 		md.WriteByte('\n')
 	}
+	if len(result.InvariantDecisions) > 0 {
+		md.WriteString("\n## Protocol invariants\n\n")
+		for _, d := range result.InvariantDecisions {
+			fmt.Fprintf(&md, "- `%s` (%s): **%s**; blocked: %t\n", d.ID, d.Severity, d.Status, d.Blocked)
+		}
+	}
 	return os.WriteFile(filepath.Join(dir, "gate.md"), []byte(md.String()), 0600)
 }
 
@@ -213,6 +249,7 @@ func gateCommand(args []string, w io.Writer) error {
 	reportPath := f.String("report", "reports/report.json", "Audit report JSON")
 	policyPath := f.String("policy", "", "Versioned policy JSON in the caller repository (required)")
 	baselinePath := f.String("baseline", "", "Optional accepted-finding baseline JSON")
+	intentPath := f.String("intent", "", "Reviewed protocol intent JSON for assurance evaluation")
 	expectedRevision := f.String("expected-revision", "", "Expected audited Git revision; fail on stale reports")
 	out := f.String("out", "", "Output directory; defaults to report directory")
 	if err := parse(f, args); err != nil {
@@ -242,16 +279,37 @@ func gateCommand(args []string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if policy.RequireAssurance && *intentPath == "" {
+		return fmt.Errorf("policy requires --intent for protocol assurance")
+	}
 	dir := *out
 	if dir == "" {
 		dir = filepath.Dir(*reportPath)
+	}
+	if *intentPath != "" {
+		reportData, err := os.ReadFile(*reportPath)
+		if err != nil {
+			return err
+		}
+		manifest, intentHash, err := readIntent(*intentPath, r.Scope)
+		if err != nil {
+			return err
+		}
+		assurance, err := assessIntent(r, manifest, digest(string(reportData)), intentHash)
+		if err != nil {
+			return err
+		}
+		if err := saveAssurance(dir, assurance); err != nil {
+			return err
+		}
+		applyAssuranceGate(&result, assurance)
 	}
 	if err := saveGateResult(dir, result); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "Policy gate: %d blocked, %d accepted, %d not actionable. Results: %s\n", result.Blocked, result.Accepted, result.NotActionable, filepath.Join(dir, "gate.json"))
 	if !result.Passed {
-		return fmt.Errorf("policy gate blocked %d finding(s)", result.Blocked)
+		return fmt.Errorf("policy gate blocked %d finding(s) or invariant(s)", result.Blocked)
 	}
 	return nil
 }

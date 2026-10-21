@@ -59,10 +59,14 @@ on:
         description: Optional accepted-finding baseline JSON path in the caller repository
         type: string
         default: ''
+      intent-file:
+        description: Optional reviewed protocol intent JSON path in the caller repository
+        type: string
+        default: ''
       agent-ref:
         description: Tool revision; pin to a reviewed commit for production
         type: string
-        default: v0.8.0
+        default: v0.9.0
     secrets:
       COPILOT_TOKEN:
         description: Optional PAT with Copilot Requests; needed for personal repositories
@@ -167,7 +171,7 @@ jobs:
           ref: ${{ inputs.agent-ref }}
           persist-credentials: false
       - uses: actions/checkout@v6
-        if: inputs.policy-file != ''
+        if: inputs.policy-file != '' || inputs.intent-file != ''
         with:
           persist-credentials: false
           path: contracts-repo
@@ -223,10 +227,17 @@ jobs:
         env:
           POLICY_FILE: ${{ inputs.policy-file }}
           BASELINE_FILE: ${{ inputs.baseline-file }}
+          INTENT_FILE: ${{ inputs.intent-file }}
         run: |
           args=(--report reviewed-report/report.json --policy "contracts-repo/$POLICY_FILE" --expected-revision "$GITHUB_SHA" --out reviewed-report)
           if [ -n "$BASELINE_FILE" ]; then args+=(--baseline "contracts-repo/$BASELINE_FILE"); fi
+          if [ -n "$INTENT_FILE" ]; then args+=(--intent "contracts-repo/$INTENT_FILE"); fi
           ./bin/audit-signal gate "${args[@]}"
+      - name: Map protocol assurance without a merge policy
+        if: inputs.intent-file != '' && inputs.policy-file == ''
+        env:
+          INTENT_FILE: ${{ inputs.intent-file }}
+        run: ./bin/audit-signal assure --report reviewed-report/report.json --intent "contracts-repo/$INTENT_FILE" --out reviewed-report
       - uses: actions/upload-artifact@v4
         if: always()
         with:

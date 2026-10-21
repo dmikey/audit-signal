@@ -313,6 +313,14 @@ func loadReport(path string) (Report, error) {
 			return r, fmt.Errorf("invalid risk evidence")
 		}
 		for _, e := range r.Risk.Evidence {
+			if len(e.InvariantIDs) > 0 {
+				if !safeSourcePath(e.SubjectSource) {
+					return r, fmt.Errorf("invalid invariant subject source")
+				}
+				if _, ok := r.Sources[e.SubjectSource]; !ok {
+					return r, fmt.Errorf("invariant subject source absent from report")
+				}
+			}
 			for _, id := range e.FindingIDs {
 				if !seen[id] {
 					return r, fmt.Errorf("risk evidence refers to unknown finding")

@@ -16,22 +16,27 @@ jobs:
         uses: ./
         with:
           target: examples/VulnerableVault.sol
-          scope: example/action-vault
+          scope: example/vault
           ai: none
           solc-version: '0.8.28'
+          intent-file: examples/intent/vault-vulnerable.json
       - name: Assert action output and real Slither finding
         env:
           REPORT_JSON: ${{ steps.audit.outputs.report-json }}
           REPORT_MARKDOWN: ${{ steps.audit.outputs.report-markdown }}
+          ASSURANCE_JSON: ${{ steps.audit.outputs.assurance-json }}
         run: |
           python3 - <<'PY'
           import json, os
           with open(os.environ['REPORT_JSON']) as f:
               report = json.load(f)
           assert os.path.isfile(os.environ['REPORT_MARKDOWN'])
-          assert report['scope'] == 'example/action-vault'
+          assert report['scope'] == 'example/vault'
           assert report['reviewed'] is False
           assert any(f['check'] == 'reentrancy-eth' and f['severity'] == 'High' for f in report['findings'])
+          with open(os.environ['ASSURANCE_JSON']) as f:
+              assurance = json.load(f)
+          assert all(i['status'] == 'untested' for i in assurance['invariants'])
           PY
   action-policy-smoke:
     runs-on: ubuntu-latest
@@ -103,6 +108,39 @@ jobs:
           assert all(x['stage'] != 'review' for x in layers)
           assert any(x['stage'] == 'dynamic-test' and x['tool'] == 'foundry' and x['status'] == 'Success' and x['claim'] == 'exploit-reproduced' for x in layers)
           PY
+      - name: Verify vulnerable vault assurance blocks the gate
+        run: |
+          ./bin/audit-signal assure --report reports/report.json --intent examples/intent/vault-vulnerable.json --out reports
+          if ./bin/audit-signal gate --report reports/report.json --policy examples/intent/policy.json --intent examples/intent/vault-vulnerable.json --out reports; then
+            echo 'Vulnerable vault unexpectedly passed the gate.' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          with open('reports/assurance.json') as f: assurance = json.load(f)
+          with open('reports/gate.json') as f: gate = json.load(f)
+          states = {i['id']: i['status'] for i in assurance['invariants']}
+          assert states == {'depositor-funds-isolated': 'counterexample-local', 'failed-transfer-keeps-credit': 'unmapped'}, states
+          assert not gate['passed'] and any(d['id'] == 'depositor-funds-isolated' and d['blocked'] for d in gate['invariant_decisions'])
+          assert all(t['subject_source'] == 'examples/VulnerableVault.sol' for i in assurance['invariants'] for t in i['tests'])
+          PY
+      - name: Verify repaired vault local properties and lower-priority gap
+        run: |
+          ./bin/audit-signal audit --target examples/risk/src/FixedVault.sol --scope example/fixed-vault --ai none --solc-version 0.8.28 --out reports/fixed-vault
+          ./bin/audit-signal risk --report reports/fixed-vault/report.json --project examples/risk --source-root . --plan examples/risk/fixed-plan.json --out reports/fixed-vault --solc .slither-venv/.solc-select/artifacts/solc-0.8.28/solc-0.8.28
+          ./bin/audit-signal gate --report reports/fixed-vault/report.json --policy examples/intent/policy.json --intent examples/intent/vault-fixed.json --out reports/fixed-vault
+          python3 - <<'PY'
+          import json
+          with open('reports/fixed-vault/assurance.json') as f: assurance = json.load(f)
+          with open('reports/fixed-vault/gate.json') as f: gate = json.load(f)
+          states = {i['id']: i for i in assurance['invariants']}
+          assert states['depositor-funds-isolated']['status'] == 'checked-local'
+          assert states['failed-transfer-keeps-credit']['status'] == 'checked-local'
+          assert states['deposit-credit-matches-value']['status'] == 'unmapped'
+          assert states['deposit-credit-matches-value']['proposal']
+          assert gate['passed'] and gate['blocked'] == 0, gate
+          assert all(t['subject_source'] == 'examples/risk/src/FixedVault.sol' for i in assurance['invariants'] for t in i['tests'])
+          PY
       - name: Scan independent-discovery fixture with real Slither
         run: ./bin/audit-signal audit --target examples/RewardPool.sol --scope example/reward-pool --ai none --solc-version 0.8.28 --out reports/reward-pool
       - name: Reproduce reward claim exploit in local EVM
@@ -133,6 +171,15 @@ jobs:
             reports/report.json
             reports/forge-results.json
             reports/risk.log
+            reports/assurance.json
+            reports/assurance.md
+            reports/gate.json
+            reports/gate.md
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: example-fixed-vault-assurance
+          path: reports/fixed-vault/
           retention-days: 7
   binaries:
     runs-on: ubuntu-latest

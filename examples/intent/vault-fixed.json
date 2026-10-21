@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "scope": "example/fixed-vault",
+  "assets": [
+    {"id": "deposited-eth", "description": "ETH credited to vault depositors"}
+  ],
+  "roles": [
+    {"id": "depositor", "description": "Account that deposits and withdraws its own credited ETH"},
+    {"id": "external-recipient", "description": "Contract that receives ETH and may call back into the vault"}
+  ],
+  "assumptions": [
+    {"id": "recipient-can-reenter", "statement": "An ETH recipient may invoke vault functions during its receive callback"}
+  ],
+  "invariants": [
+    {
+      "id": "depositor-funds-isolated",
+      "title": "One depositor cannot withdraw another depositor's ETH",
+      "statement": "A withdrawal by one account cannot reduce ETH backing another account's recorded balance.",
+      "severity": "High",
+      "assets": ["deposited-eth"],
+      "roles": ["depositor", "external-recipient"],
+      "assumptions": ["recipient-can-reenter"],
+      "sources": ["examples/risk/src/FixedVault.sol"]
+    },
+    {
+      "id": "failed-transfer-keeps-credit",
+      "title": "A failed withdrawal preserves credit",
+      "statement": "If the ETH transfer fails, the withdrawing account retains its recorded balance.",
+      "severity": "Medium",
+      "assets": ["deposited-eth"],
+      "roles": ["depositor", "external-recipient"],
+      "assumptions": [],
+      "sources": ["examples/risk/src/FixedVault.sol"]
+    },
+    {
+      "id": "deposit-credit-matches-value",
+      "title": "A deposit credits exactly the ETH received",
+      "statement": "Every successful deposit increases only the sender's balance by exactly msg.value.",
+      "severity": "Low",
+      "assets": ["deposited-eth"],
+      "roles": ["depositor"],
+      "assumptions": [],
+      "sources": ["examples/risk/src/FixedVault.sol"]
+    }
+  ]
+}

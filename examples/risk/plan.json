@@ -1,7 +1,7 @@
 {
   "version": 1,
   "cases": [
-    {"check":"reentrancy-eth","suite":"test/VaultRisk.t.sol:VaultRiskTest","test":"test_ReentrancyDrainsVictimFunds()","claim":"exploit-reproduced","description":"Attacker deposits 1 ETH and withdraws 6 ETH, consuming the victim's 5 ETH in the local EVM."},
+    {"check":"reentrancy-eth","invariant_ids":["depositor-funds-isolated"],"subject_source":"examples/VulnerableVault.sol","suite":"test/VaultRisk.t.sol:VaultRiskTest","test":"test_ReentrancyDrainsVictimFunds()","claim":"exploit-reproduced","description":"Attacker deposits 1 ETH and withdraws 6 ETH, consuming the victim's 5 ETH in the local EVM."},
     {"check":"reentrancy-eth","suite":"test/VaultRisk.t.sol:VaultRiskTest","test":"test_FixedVaultBlocksSameAttack()","claim":"mitigation-holds","description":"The same callback attack receives only its own deposit in the checks-effects-interactions remediation fixture."},
     {"check":"reentrancy-eth","suite":"test/VaultRisk.t.sol:VaultRiskTest","test":"test_FailedTransferRestoresCredit()","claim":"risk-property","description":"A rejecting recipient causes withdrawal to revert and retains its credit in the remediation fixture."},
     {"check":"reentrancy-eth","suite":"test/VaultRisk.t.sol:VaultRiskTest","test":"testFuzz_FixedVaultPreservesVictimFunds(uint96,uint8)","claim":"risk-property","description":"Fuzz deposit amounts and callback counts; remediation fixture must preserve victim funds and credit."}
