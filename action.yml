@@ -1,5 +1,5 @@
-name: Slither Agent
-description: Install Slither Agent and audit the caller repository with Slither and optional AI review
+name: Audit Signal
+description: Install Audit Signal and audit the caller repository with Slither and optional AI review
 branding:
   icon: shield
   color: purple
@@ -58,7 +58,7 @@ runs:
       run: |
         set -euo pipefail
         if [[ "$RUNNER_OS" != Linux && "$RUNNER_OS" != macOS ]]; then
-          echo 'Slither Agent action supports Linux and macOS runners.' >&2
+          echo 'Audit Signal action supports Linux and macOS runners.' >&2
           exit 1
         fi
         if [[ "$AI" != none && "$AI" != review ]]; then
@@ -81,11 +81,11 @@ runs:
           fi
         fi
         if [[ -z "$TARGET" ]]; then echo 'target cannot be empty.' >&2; exit 1; fi
-        work="$(mktemp -d "$RUNNER_TEMP/slither-agent.XXXXXX")"
+        work="$(mktemp -d "$RUNNER_TEMP/audit-signal.XXXXXX")"
         {
-          echo "SLITHER_AGENT_BIN=$work/slither-agent"
-          echo "SLITHER_AGENT_VENV=$work/venv"
-          echo "SLITHER_AGENT_REPORT=$work/report"
+          echo "AUDIT_SIGNAL_BIN=$work/audit-signal"
+          echo "AUDIT_SIGNAL_VENV=$work/venv"
+          echo "AUDIT_SIGNAL_REPORT=$work/report"
         } >> "$GITHUB_ENV"
     - uses: actions/setup-go@v6
       with:
@@ -103,8 +103,8 @@ runs:
         SOLC_VERSION: ${{ inputs.solc-version }}
       run: |
         set -euo pipefail
-        (cd "$ACTION_PATH" && go build -trimpath -o "$SLITHER_AGENT_BIN" ./cmd/slither-agent)
-        "$SLITHER_AGENT_BIN" setup --venv "$SLITHER_AGENT_VENV" --solc-version "$SOLC_VERSION"
+        (cd "$ACTION_PATH" && go build -trimpath -o "$AUDIT_SIGNAL_BIN" ./cmd/audit-signal)
+        "$AUDIT_SIGNAL_BIN" setup --venv "$AUDIT_SIGNAL_VENV" --solc-version "$SOLC_VERSION"
     - name: Install Copilot CLI
       if: inputs.ai == 'review' && inputs.provider == 'copilot'
       shell: bash
@@ -119,9 +119,9 @@ runs:
       run: |
         set -euo pipefail
         if [[ -z "$SCOPE" ]]; then SCOPE="$GITHUB_REPOSITORY:$TARGET"; fi
-        "$SLITHER_AGENT_BIN" audit --target "$TARGET" --scope "$SCOPE" \
-          --ai none --venv "$SLITHER_AGENT_VENV" --solc-version "$SOLC_VERSION" \
-          --max-source-bytes "$MAX_SOURCE_BYTES" --out "$SLITHER_AGENT_REPORT"
+        "$AUDIT_SIGNAL_BIN" audit --target "$TARGET" --scope "$SCOPE" \
+          --ai none --venv "$AUDIT_SIGNAL_VENV" --solc-version "$SOLC_VERSION" \
+          --max-source-bytes "$MAX_SOURCE_BYTES" --out "$AUDIT_SIGNAL_REPORT"
     - name: Discover source-level security candidates
       if: inputs.ai == 'review' && inputs.discover == 'true'
       shell: bash
@@ -133,8 +133,8 @@ runs:
         OPENAI_API_KEY: ${{ inputs.provider == 'openai' && inputs.openai-api-key || '' }}
         ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && inputs.anthropic-api-key || '' }}
       run: |
-        "$SLITHER_AGENT_BIN" discover --report "$SLITHER_AGENT_REPORT/report.json" \
-          --out "$SLITHER_AGENT_REPORT" --provider "$PROVIDER" --model "$MODEL"
+        "$AUDIT_SIGNAL_BIN" discover --report "$AUDIT_SIGNAL_REPORT/report.json" \
+          --out "$AUDIT_SIGNAL_REPORT" --provider "$PROVIDER" --model "$MODEL"
     - name: Review findings with AI
       if: inputs.ai == 'review'
       shell: bash
@@ -146,11 +146,11 @@ runs:
         OPENAI_API_KEY: ${{ inputs.provider == 'openai' && inputs.openai-api-key || '' }}
         ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && inputs.anthropic-api-key || '' }}
       run: |
-        "$SLITHER_AGENT_BIN" review --report "$SLITHER_AGENT_REPORT/report.json" \
-          --out "$SLITHER_AGENT_REPORT" --provider "$PROVIDER" --model "$MODEL"
+        "$AUDIT_SIGNAL_BIN" review --report "$AUDIT_SIGNAL_REPORT/report.json" \
+          --out "$AUDIT_SIGNAL_REPORT" --provider "$PROVIDER" --model "$MODEL"
     - name: Expose report paths
       id: report
       shell: bash
       run: |
-        echo "report-json=$SLITHER_AGENT_REPORT/report.json" >> "$GITHUB_OUTPUT"
-        echo "report-markdown=$SLITHER_AGENT_REPORT/report.md" >> "$GITHUB_OUTPUT"
+        echo "report-json=$AUDIT_SIGNAL_REPORT/report.json" >> "$GITHUB_OUTPUT"
+        echo "report-markdown=$AUDIT_SIGNAL_REPORT/report.md" >> "$GITHUB_OUTPUT"

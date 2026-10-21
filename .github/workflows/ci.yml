@@ -58,7 +58,7 @@ jobs:
           version: v1.8.5
       - run: make smoke
       - name: Execute local exploit and fuzz tests
-        run: ./bin/slither-agent risk --report reports/report.json --project examples/risk --source-root . --plan examples/risk/plan.json --solc .slither-venv/.solc-select/artifacts/solc-0.8.28/solc-0.8.28
+        run: ./bin/audit-signal risk --report reports/report.json --project examples/risk --source-root . --plan examples/risk/plan.json --solc .slither-venv/.solc-select/artifacts/solc-0.8.28/solc-0.8.28
       - name: Assert real Slither detected the intentionally vulnerable fixture
         run: |
           python3 - <<'PY'
@@ -78,7 +78,7 @@ jobs:
           assert any(x['stage'] == 'dynamic-test' and x['tool'] == 'foundry' and x['status'] == 'Success' and x['claim'] == 'exploit-reproduced' for x in layers)
           PY
       - name: Scan independent-discovery fixture with real Slither
-        run: ./bin/slither-agent audit --target examples/RewardPool.sol --scope example/reward-pool --ai none --solc-version 0.8.28 --out reports/reward-pool
+        run: ./bin/audit-signal audit --target examples/RewardPool.sol --scope example/reward-pool --ai none --solc-version 0.8.28 --out reports/reward-pool
       - name: Reproduce reward claim exploit in local EVM
         run: forge test --offline --match-contract RewardPoolRiskTest --use "$GITHUB_WORKSPACE/.slither-venv/.solc-select/artifacts/solc-0.8.28/solc-0.8.28"
         working-directory: examples/risk
@@ -126,7 +126,7 @@ jobs:
         with:
           go-version: '1.24.x'
           cache: false
-      - run: go build -trimpath -o bin/slither-agent-${GOOS}-${GOARCH}${SUFFIX} ./cmd/slither-agent
+      - run: go build -trimpath -o bin/audit-signal-${GOOS}-${GOARCH}${SUFFIX} ./cmd/audit-signal
         env:
           CGO_ENABLED: '0'
           GOOS: ${{ matrix.os }}
@@ -134,5 +134,5 @@ jobs:
           SUFFIX: ${{ matrix.suffix }}
       - uses: actions/upload-artifact@v4
         with:
-          name: slither-agent-${{ matrix.os }}-${{ matrix.arch }}
+          name: audit-signal-${{ matrix.os }}-${{ matrix.arch }}
           path: bin/*

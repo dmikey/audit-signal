@@ -81,6 +81,18 @@ func TestAIReviewFailsClosed(t *testing.T) {
 	}
 }
 
+func TestIssueMarkerSurvivesRename(t *testing.T) {
+	id := strings.Repeat("a", 64)
+	for _, prefix := range []string{"audit-signal", "slither-agent"} {
+		if got := issueMarkerID("<!-- " + prefix + ":" + id + " -->\nbody"); got != id {
+			t.Fatalf("failed to recognize %s issue marker: %q", prefix, got)
+		}
+	}
+	if issueMarkerID("<!-- unrelated:"+id+" -->") != "" {
+		t.Fatal("accepted unrelated issue marker")
+	}
+}
+
 func TestGitHubPublishDeduplicatesAndPreservesClosed(t *testing.T) {
 	fs, _ := parseSlither(fixture("/one"), "org/contracts", "/one")
 	r := Report{Scope: "org/contracts", Findings: fs}
@@ -95,7 +107,7 @@ func TestGitHubPublishDeduplicatesAndPreservesClosed(t *testing.T) {
 		case q.URL.Path == "/repos/org/contracts":
 			fmt.Fprint(w, `{"private":true}`)
 		case q.URL.Path == "/repos/org/contracts/labels" && q.Method == "GET":
-			fmt.Fprint(w, `[{"name":"security"},{"name":"slither-agent"},{"name":"severity:high"}]`)
+			fmt.Fprint(w, `[{"name":"security"},{"name":"audit-signal"},{"name":"severity:high"}]`)
 		case q.URL.Path == "/repos/org/contracts/issues" && q.Method == "GET":
 			if stored == nil {
 				fmt.Fprint(w, `[]`)

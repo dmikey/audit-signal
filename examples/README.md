@@ -4,11 +4,11 @@
 
 [RewardPool.sol](RewardPool.sol) is another intentionally vulnerable fixture. Its `claimFor` function calculates rewards for a beneficiary but reads and updates `lastClaimEpoch` for the caller. The live Copilot discovery pass identified this mismatch as a separate High-severity candidate. Eleven fresh callers can claim for the same beneficiary in one epoch. The [Foundry test](risk/test/RewardPoolRisk.t.sol) passes after paying 1.1 ETH from a pool with only 1 ETH of reward funding, leaving 0.9 ETH to back a 1 ETH stake; full stake withdrawal then fails. This is a local fixture proof, not a deployed-contract exploit.
 
-The [risk plan](risk/reward-plan.json) maps the discovery to that exact test. The [reviewed Markdown report](reports/reward-pool-ai/report.md), [JSON report](reports/reward-pool-ai/report.json), and [raw Foundry results](reports/reward-pool-ai/forge-results.json) show the full pipeline on a real Slither scan (`imported: false`, `reviewed: true`, model `gpt-5.6-sol`). Each finding's evidence layers show which tool proposed or detected it, the separate review verdict, and whether a mapped test executed. Slither reported two informational low-level calls, while Copilot independently identified the claim checkpoint mismatch and rated it likely valid after the local exploit test. [GitHub issue #2](https://github.com/dmikey/slither-agent/issues/2) shows the published result. The other two AI candidates remain dynamically untested. Run `audit --ai none`, `discover`, `risk`, then `review` on this fixture to reproduce it. Never deploy this fixture.
+The [risk plan](risk/reward-plan.json) maps the discovery to that exact test. The [reviewed Markdown report](reports/reward-pool-ai/report.md), [JSON report](reports/reward-pool-ai/report.json), and [raw Foundry results](reports/reward-pool-ai/forge-results.json) show the full pipeline on a real Slither scan (`imported: false`, `reviewed: true`, model `gpt-5.6-sol`). Each finding's evidence layers show which tool proposed or detected it, the separate review verdict, and whether a mapped test executed. Slither reported two informational low-level calls, while Copilot independently identified the claim checkpoint mismatch and rated it likely valid after the local exploit test. [GitHub issue #2](https://github.com/dmikey/audit-signal/issues/2) shows the published result. The other two AI candidates remain dynamically untested. Run `audit --ai none`, `discover`, `risk`, then `review` on this fixture to reproduce it. Never deploy this fixture.
 
 This example runs real Slither against [VulnerableVault.sol](VulnerableVault.sol), an intentionally vulnerable ETH vault. The committed [Markdown report](reports/vulnerable-vault/report.md) and [JSON report](reports/vulnerable-vault/report.json) show the output from Slither 0.11.6 and Solidity 0.8.28.
 
-**Execution status:** static analysis, local EVM exploit/risk tests and live GPT-5.4 Copilot review completed; the reentrancy example is [GitHub issue #1](https://github.com/dmikey/slither-agent/issues/1). The walkthrough below explains the source code; it is not output from the Copilot review stage. Never deploy this fixture.
+**Execution status:** static analysis, local EVM exploit/risk tests and live GPT-5.4 Copilot review completed; the reentrancy example is [GitHub issue #1](https://github.com/dmikey/audit-signal/issues/1). The walkthrough below explains the source code; it is not output from the Copilot review stage. Never deploy this fixture.
 
 ## Findings
 
@@ -46,9 +46,9 @@ The call invokes recipient code and is relevant to the reentrancy finding. Its B
 From the repository root:
 
 ```sh
-go build -trimpath -o bin/slither-agent ./cmd/slither-agent
-./bin/slither-agent setup --solc-version 0.8.28
-./bin/slither-agent audit \
+go build -trimpath -o bin/audit-signal ./cmd/audit-signal
+./bin/audit-signal setup --solc-version 0.8.28
+./bin/audit-signal audit \
   --target examples/VulnerableVault.sol \
   --scope example/vault \
   --solc-version 0.8.28 \
@@ -63,7 +63,7 @@ Open `reports/example-vault/report.md`. The report should contain the two detect
 Install [Foundry v1.8.5](https://github.com/foundry-rs/foundry/releases/tag/v1.8.5), then run:
 
 ```sh
-./bin/slither-agent risk \
+./bin/audit-signal risk \
   --report reports/example-vault/report.json \
   --project examples/risk --source-root . \
   --plan examples/risk/plan.json \
@@ -81,7 +81,7 @@ With an authenticated `gh` login or Copilot token as described in the [main READ
 
 ```sh
 npm install -g @github/copilot@1.0.97
-./bin/slither-agent review \
+./bin/audit-signal review \
   --report reports/example-vault-risk/report.json \
   --out reports/example-vault-reviewed \
   --model gpt-5.4

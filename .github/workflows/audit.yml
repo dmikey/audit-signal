@@ -54,7 +54,7 @@ on:
       agent-ref:
         description: Tool revision; pin to a reviewed commit for production
         type: string
-        default: v0.6.0
+        default: v0.7.0
     secrets:
       COPILOT_TOKEN:
         description: Optional PAT with Copilot Requests; needed for personal repositories
@@ -70,7 +70,7 @@ on:
 # Scan/build, AI review and publication run on separate runners with separate tokens.
 permissions: {}
 concurrency:
-  group: slither-agent-${{ github.repository }}-${{ inputs.target }}
+  group: audit-signal-${{ github.repository }}-${{ inputs.target }}
   cancel-in-progress: false
 jobs:
   scan:
@@ -85,7 +85,7 @@ jobs:
           path: contracts-repo
       - uses: actions/checkout@v6
         with:
-          repository: dmikey/slither-agent
+          repository: dmikey/audit-signal
           ref: ${{ inputs.agent-ref }}
           persist-credentials: false
           path: audit-tool
@@ -103,12 +103,12 @@ jobs:
           node-version: ${{ inputs.node-version }}
       - name: Build audit tool
         working-directory: audit-tool
-        run: go build -trimpath -o bin/slither-agent ./cmd/slither-agent
+        run: go build -trimpath -o bin/audit-signal ./cmd/audit-signal
       - name: Install pinned Slither and compiler
         working-directory: audit-tool
         env:
           SOLC: ${{ inputs.solc-version }}
-        run: ./bin/slither-agent setup --solc-version "$SOLC"
+        run: ./bin/audit-signal setup --solc-version "$SOLC"
       - name: Run caller's trusted project setup
         working-directory: contracts-repo
         env:
@@ -123,7 +123,7 @@ jobs:
           SOLC: ${{ inputs.solc-version }}
           SOURCE_LIMIT: ${{ inputs.max-source-bytes }}
         run: |
-          ./audit-tool/bin/slither-agent audit --target "contracts-repo/$TARGET" \
+          ./audit-tool/bin/audit-signal audit --target "contracts-repo/$TARGET" \
             --scope "$SCOPE" --ai none --out scan-report \
             --venv audit-tool/.slither-venv \
             --solc-version "$SOLC" --max-source-bytes "$SOURCE_LIMIT"
@@ -135,7 +135,7 @@ jobs:
           FUZZ_RUNS: ${{ inputs.fuzz-runs }}
           SOLC: ${{ inputs.solc-version }}
         run: |
-          ./audit-tool/bin/slither-agent risk --report scan-report/report.json \
+          ./audit-tool/bin/audit-signal risk --report scan-report/report.json \
             --project "contracts-repo/$RISK_PROJECT" --source-root contracts-repo \
             --plan "contracts-repo/$RISK_PLAN" --out scan-report --fuzz-runs "$FUZZ_RUNS" \
             --solc "audit-tool/.slither-venv/.solc-select/artifacts/solc-$SOLC/solc-$SOLC"
@@ -155,7 +155,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          repository: dmikey/slither-agent
+          repository: dmikey/audit-signal
           ref: ${{ inputs.agent-ref }}
           persist-credentials: false
       - uses: actions/setup-go@v6
@@ -170,7 +170,7 @@ jobs:
         with:
           name: slither-source-evidence
           path: scan-report
-      - run: go build -trimpath -o bin/slither-agent ./cmd/slither-agent
+      - run: go build -trimpath -o bin/audit-signal ./cmd/audit-signal
       - name: Install Copilot CLI
         if: inputs.provider == 'copilot'
         run: npm install -g @github/copilot@1.0.97
@@ -183,7 +183,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.ANTHROPIC_API_KEY || '' }}
           PROVIDER: ${{ inputs.provider }}
           MODEL: ${{ inputs.model }}
-        run: ./bin/slither-agent discover --report scan-report/report.json --out reviewed-report --provider "$PROVIDER" --model "$MODEL"
+        run: ./bin/audit-signal discover --report scan-report/report.json --out reviewed-report --provider "$PROVIDER" --model "$MODEL"
       - name: Review all findings with AI (no model tools)
         env:
           GITHUB_TOKEN: ${{ inputs.provider == 'copilot' && github.token || '' }}
@@ -195,7 +195,7 @@ jobs:
           DISCOVER: ${{ inputs.discover }}
         run: |
           if [ "$DISCOVER" = true ]; then report=reviewed-report/report.json; else report=scan-report/report.json; fi
-          ./bin/slither-agent review --report "$report" --out reviewed-report --provider "$PROVIDER" --model "$MODEL"
+          ./bin/audit-signal review --report "$report" --out reviewed-report --provider "$PROVIDER" --model "$MODEL"
       - uses: actions/upload-artifact@v4
         with:
           name: reviewed-security-report
@@ -212,7 +212,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          repository: dmikey/slither-agent
+          repository: dmikey/audit-signal
           ref: ${{ inputs.agent-ref }}
           persist-credentials: false
       - uses: actions/setup-go@v6
@@ -223,13 +223,13 @@ jobs:
         with:
           name: reviewed-security-report
           path: reviewed-report
-      - run: go build -trimpath -o bin/slither-agent ./cmd/slither-agent
+      - run: go build -trimpath -o bin/audit-signal ./cmd/audit-signal
       - name: Publish candidates in the caller's private repository
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           MIN_SEVERITY: ${{ inputs.min-severity }}
-        run: ./bin/slither-agent publish --report reviewed-report/report.json --repo "$REPO" --min-severity "$MIN_SEVERITY"
+        run: ./bin/audit-signal publish --report reviewed-report/report.json --repo "$REPO" --min-severity "$MIN_SEVERITY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

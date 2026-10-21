@@ -179,22 +179,15 @@ func (c *githubClient) publish(ctx context.Context, repo string, r Report, findi
 			if len(issue.PullRequest) > 0 && string(issue.PullRequest) != "null" {
 				continue
 			}
-			if strings.HasPrefix(issue.Body, "<!-- slither-agent:") {
-				end := strings.Index(issue.Body, " -->")
-				if end < 0 {
-					continue
-				}
-				id := strings.TrimPrefix(issue.Body[:end], "<!-- slither-agent:")
-				if len(id) == 64 {
-					existing[id] = issue
-				}
+			if id := issueMarkerID(issue.Body); id != "" {
+				existing[id] = issue
 			}
 		}
 		if len(issues) < 100 {
 			break
 		}
 	}
-	labels := map[string]string{"security": "b60205", "slither-agent": "5319e7"}
+	labels := map[string]string{"security": "b60205", "audit-signal": "5319e7"}
 	for _, f := range findings {
 		labels["severity:"+strings.ToLower(f.Severity)] = "d93f0b"
 	}
@@ -228,7 +221,7 @@ func (c *githubClient) publish(ctx context.Context, repo string, r Report, findi
 		if len(body) > 60000 {
 			return receipts, fmt.Errorf("issue body too large for %s", finding.ID)
 		}
-		labels := []string{"security", "slither-agent", "severity:" + strings.ToLower(finding.Severity)}
+		labels := []string{"security", "audit-signal", "severity:" + strings.ToLower(finding.Severity)}
 		old, ok := existing[finding.ID]
 		if ok {
 			if old.State == "closed" {
@@ -258,4 +251,23 @@ func (c *githubClient) publish(ctx context.Context, repo string, r Report, findi
 		}
 	}
 	return receipts, nil
+}
+
+// Keep recognizing issues created before the product rename, so a new release
+// updates them instead of opening a duplicate for the same finding ID.
+func issueMarkerID(body string) string {
+	for _, prefix := range []string{"<!-- audit-signal:", "<!-- slither-agent:"} {
+		if !strings.HasPrefix(body, prefix) {
+			continue
+		}
+		end := strings.Index(body, " -->")
+		if end < 0 {
+			return ""
+		}
+		id := strings.TrimPrefix(body[:end], prefix)
+		if len(id) == 64 {
+			return id
+		}
+	}
+	return ""
 }

@@ -8,14 +8,14 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/dmikey/slither-agent/internal/agent"
+	"github.com/dmikey/audit-signal/internal/agent"
 )
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if err := agent.Run(ctx, os.Args[1:], os.Stdout); err != nil && !errors.Is(err, flag.ErrHelp) {
-		fmt.Fprintln(os.Stderr, "slither-agent:", err)
+		fmt.Fprintln(os.Stderr, "audit-signal:", err)
 		os.Exit(1)
 	}
 }

@@ -1,3 +1,3 @@
-module github.com/dmikey/slither-agent
+module github.com/dmikey/audit-signal
 
 go 1.20

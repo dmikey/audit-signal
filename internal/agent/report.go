@@ -408,7 +408,7 @@ func evidenceLayersMarkdown(r Report, f Finding) string {
 
 func issueBody(r Report, f Finding) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "<!-- slither-agent:%s -->\n## %s\n\n**Severity:** %s · **Confidence:** %s · **Origin:** %s\n\n**Scope:** `%s` · **Revision:** `%s` · **Dirty:** %t · **Imported:** %t\n\n**Status:** automated candidate; requires human validation.\n\n", f.ID, f.Check, f.Severity, f.Confidence, f.Origin, r.Scope, r.Revision, r.Dirty, r.Imported)
+	fmt.Fprintf(&b, "<!-- audit-signal:%s -->\n## %s\n\n**Severity:** %s · **Confidence:** %s · **Origin:** %s\n\n**Scope:** `%s` · **Revision:** `%s` · **Dirty:** %t · **Imported:** %t\n\n**Status:** automated candidate; requires human validation.\n\n", f.ID, f.Check, f.Severity, f.Confidence, f.Origin, r.Scope, r.Revision, r.Dirty, r.Imported)
 	b.WriteString(evidenceLayersMarkdown(r, f))
 	fmt.Fprintf(&b, "### Source evidence\n\n%s\n\n", f.Description)
 	for _, l := range f.Locations {

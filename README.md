@@ -1,10 +1,12 @@
-# slither-agent
+# Audit Signal
 
 A portable Go binary that runs [Slither](https://github.com/crytic/slither), searches source for additional issues with **Copilot, OpenAI, or Anthropic**, reviews all findings, and creates deduplicated GitHub security issues. Intended for private smart contract repositories, including Foundry, Hardhat and standalone Solidity/Vyper targets.
 
 The [scanner strategy and benchmark plan](docs/SCANNER_STRATEGY.md) compares the main alternatives and defines how we will measure detection quality, proof, coverage and false positives.
 
 Copilot remains the default, with no provider API key required when Copilot access is available. OpenAI and Anthropic are optional bring-your-own-key choices. The Go binary has no third-party Go dependencies. Python/Slither and the Copilot CLI remain external runtime dependencies; the CLI is only needed for Copilot.
+
+Audit Signal is the new name for the existing `slither-agent` repository. Older reports retain their original names as historical evidence. The publisher recognizes both old and new issue markers, so upgrading does not create duplicate findings in a target repository. GitHub does not redirect Action or reusable-workflow `uses:` references after a repository rename: update callers to `dmikey/audit-signal` when adopting this release. Workflows still using `dmikey/slither-agent` must change their `uses:` references.
 
 ## Example audit
 
@@ -15,8 +17,8 @@ See the [VulnerableVault audit walkthrough](examples/README.md), with committed 
 Requires Go 1.20+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and a patched Node.js release for Copilot CLI. Local development and the reusable workflow use **Node.js 26.12.1**, which includes the [October 21, 2026 TLS security fixes](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases). Callers can override `node-version` with another patched release. CI produces binaries for Linux, macOS and Windows. Slither setup and live scanning are tested on Linux and macOS; Windows compiler availability depends on your toolchain.
 
 ```sh
-go build -trimpath -o bin/slither-agent ./cmd/slither-agent
-./bin/slither-agent setup --solc-version 0.8.28
+go build -trimpath -o bin/audit-signal ./cmd/audit-signal
+./bin/audit-signal setup --solc-version 0.8.28
 npm install -g @github/copilot@1.0.97
 ```
 
@@ -25,13 +27,13 @@ Setup installs `slither-analyzer==0.11.6` and `solc-select==1.2.0` into `.slithe
 For local use, run `gh auth login` with a GitHub account that has Copilot access. When no token environment variable is set, the agent captures the existing `gh` login in memory and supplies it to its isolated Copilot process. Alternatively, supply a supported `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`. A fine-grained PAT needs the **Copilot Requests** permission and Copilot access. The reviewer does not reuse local Copilot login/config files. Keep tokens in your environment or GitHub secrets; never commit them.
 
 ```sh
-./bin/slither-agent audit \
+./bin/audit-signal audit \
   --target /path/to/private-contracts \
   --scope playmos/contracts \
   --solc-version 0.8.28 --model auto
 
 # Review reports/report.md, then publish in the private contract repository:
-./bin/slither-agent publish \
+./bin/audit-signal publish \
   --report reports/report.json --repo owner/private-contracts
 ```
 
@@ -43,7 +45,7 @@ To use a preferred provider and model locally, set its API key in the environmen
 
 ```sh
 export OPENAI_API_KEY='your-key-from-a-secret-manager'
-./bin/slither-agent audit --target contracts --scope owner/contracts \
+./bin/audit-signal audit --target contracts --scope owner/contracts \
   --provider openai --model YOUR_OPENAI_MODEL
 # Or: ANTHROPIC_API_KEY with --provider anthropic --model YOUR_ANTHROPIC_MODEL
 ```
@@ -51,11 +53,11 @@ export OPENAI_API_KEY='your-key-from-a-secret-manager'
 To search for flaws beyond Slither's detectors, run `discover` after the static audit, then `review` before publication. Discovery requires exact source file, line and excerpt evidence for each candidate. A new discovery clears any prior review, and the reviewer evaluates all findings together. The model may miss flaws or propose false positives; a line match establishes provenance, not exploitability. To make a discovery concrete, add a project-specific Foundry test and map its source file and line in the risk plan; this survives model-generated check-name changes.
 
 ```sh
-./bin/slither-agent audit --target contracts --scope owner/contracts --ai none
-./bin/slither-agent discover --report reports/report.json --model auto
-./bin/slither-agent risk --report reports/report.json --project . --source-root . --plan risk-plan.json
-./bin/slither-agent review --report reports/report.json --model auto
-./bin/slither-agent publish --report reports/report.json --repo owner/private-contracts
+./bin/audit-signal audit --target contracts --scope owner/contracts --ai none
+./bin/audit-signal discover --report reports/report.json --model auto
+./bin/audit-signal risk --report reports/report.json --project . --source-root . --plan risk-plan.json
+./bin/audit-signal review --report reports/report.json --model auto
+./bin/audit-signal publish --report reports/report.json --repo owner/private-contracts
 ```
 
 AI review consumes a bounded source bundle (48 KB by default). It excludes vendor/build directories (`node_modules`, `lib`, `out`, `cache`, `artifacts`) and ignores symlinks. An oversized bundle fails explicitly; narrow the target or raise `--max-source-bytes`. The serialized review payload is capped at 256 KB. Each Slither finding must receive exactly one valid review. Invalid, incomplete or failed AI output leaves the original Slither report available and prevents normal publication.
@@ -64,7 +66,7 @@ AI review consumes a bounded source bundle (48 KB by default). It excludes vendo
 
 ### One-step installable action
 
-After checkout, add `uses: dmikey/slither-agent@v0.6.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
+After checkout, add `uses: dmikey/audit-signal@v0.7.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
 
 ```yaml
 name: Smart contract audit
@@ -80,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
       - id: scan
-        uses: dmikey/slither-agent@v0.6.0
+        uses: dmikey/audit-signal@v0.7.0
         with:
           target: '.'
           solc-version: '0.8.28'
@@ -115,7 +117,7 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.6.0
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.7.0
     with:
       target: '.'
       solc-version: '0.8.28'
@@ -140,11 +142,11 @@ For a provider key, add `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` under the **priv
 ```yaml
 jobs:
   audit:
-    uses: dmikey/slither-agent/.github/workflows/audit.yml@v0.6.0
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.7.0
     with:
       provider: openai # or anthropic
       model: YOUR_PROVIDER_MODEL_ID
-      agent-ref: v0.6.0
+      agent-ref: v0.7.0
       target: '.'
       publish: false
     secrets:
@@ -163,11 +165,11 @@ Reports include source code and may include security-sensitive evidence. Artifac
 The `risk` command adds an executed Foundry test stage before AI review. It runs your trusted project's exploit, fuzz and invariant tests in a local EVM, with an explicit [detector-to-test plan](examples/risk/plan.json). Tests are supplied by the project; the tool does not automatically generate attack contracts for arbitrary findings. [The example suite](examples/risk/test/VaultRisk.t.sol) reproduces a reentrancy drain, checks the remediation fixture, tests failed-transfer credit restoration, and runs 256 fuzz cases.
 
 ```sh
-./bin/slither-agent audit --target . --scope owner/contracts --ai none
-./bin/slither-agent risk --report reports/report.json --project . \
+./bin/audit-signal audit --target . --scope owner/contracts --ai none
+./bin/audit-signal risk --report reports/report.json --project . \
   --source-root . --plan risk-plan.json --solc /path/to/installed/solc
-./bin/slither-agent review --report reports/report.json
-./bin/slither-agent publish --report reports/report.json --repo owner/private-contracts
+./bin/audit-signal review --report reports/report.json
+./bin/audit-signal publish --report reports/report.json --repo owner/private-contracts
 ```
 
 Use Foundry v1.8.5 or a version supporting `forge test --json-file`. Compilation is offline, so install the correct solc beforehand or pass `--solc`. Source hashes must match the Slither snapshot; changed source requires a new audit. The plan specifies an exact suite/test signature, either a detector `check` or source `file` and `line`, a descriptive claim (`exploit-reproduced`, `mitigation-holds`, or `risk-property`) and description. Detector mappings associate evidence with every finding of that type; source-location mappings target one fault site. Claims describe the intended assertions, and a successful test means those assertions passed. It does not automatically establish the security of every mapped finding.
@@ -180,11 +182,11 @@ The workflow enables this stage when `risk-project` is set; otherwise dynamic te
 
 The tool writes `report.json`, `report.md`, and `slither.log`. JSON contains source hashes/content, Git revision, dirty-checkout status, detector severity/confidence, source locations and AI review. Each finding also has derived `evidence_layers`: detection or discovery tool and version/model, separate AI review verdict, and each mapped Foundry test with its status and plan claim. `not-run` means no dynamic stage ran; `unmapped` means a successful dynamic stage had no test mapped to that finding; `no-executed-evidence` means the dynamic stage failed before that finding gained test evidence. Imported Slither output is marked `imported`, not reported as a direct scan. AI discovery adds separate candidates with source-line evidence; AI review adds a verdict, reasoning, exploit scenario, remediation, and validation steps. The tool does **not** silently remove Slither findings or promote model opinion or a passing test into a proven production exploit. The layer records are derived from the report's original evidence and checked when loading; future engines can use the same stage/tool distinction.
 
-Use `slither-agent render --report path/to/report.json` to add the layer view to an existing report without running Slither, Copilot or Foundry again. It rewrites `report.json` and `report.md` beside the input unless `--out` selects another directory.
+Use `audit-signal render --report path/to/report.json` to add the layer view to an existing report without running Slither, Copilot or Foundry again. It rewrites `report.json` and `report.md` beside the input unless `--out` selects another directory.
 
 `publish` defaults to Medium and High findings with a `likely-valid` AI verdict, at most 20 selected findings. `--min-severity Low` includes Low findings; `--verdict needs-review` or `--verdict all` changes review filtering; `--finding-id` selects one exact candidate; `--max-issues` changes the cap. Exceeding the cap fails before issue writes. Normal publication requires a complete AI review; `--allow-unreviewed` explicitly permits static-only candidates. Public destinations are blocked unless `--allow-public-destination` is supplied.
 
-Issues receive `security`, `slither-agent`, and `severity:*` labels. Each includes detector evidence, source locations, revision metadata and AI assessment. A deterministic fingerprint prevents duplicates for the same scope, detector, locations and evidence; source/line changes may create a new candidate. Open issues are updated when evidence changes; closed issues are left closed. Human labels are preserved. `publication.json` records created/updated/unchanged issue URLs. Run publishers serially per scope; the reusable workflow supplies concurrency control. Publication uses ordinary GitHub Issues, not Security Advisories or code-scanning alerts.
+Issues receive `security`, `audit-signal`, and `severity:*` labels. Each includes detector evidence, source locations, revision metadata and AI assessment. A deterministic fingerprint prevents duplicates for the same scope, detector, locations and evidence; source/line changes may create a new candidate. Open issues are updated when evidence changes; closed issues are left closed. Human labels are preserved. `publication.json` records created/updated/unchanged issue URLs. Run publishers serially per scope; the reusable workflow supplies concurrency control. Publication uses ordinary GitHub Issues, not Security Advisories or code-scanning alerts.
 
 ## Validation
 

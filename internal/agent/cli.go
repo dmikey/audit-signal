@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = "0.6.0"
+const Version = "0.7.0"
 const SlitherVersion = "0.11.6"
 const SolcSelectVersion = "1.2.0"
 
@@ -48,7 +48,7 @@ func Run(ctx context.Context, args []string, w io.Writer) error {
 	}
 }
 func help(w io.Writer) {
-	fmt.Fprintln(w, `slither-agent: Slither + AI smart contract audits
+	fmt.Fprintln(w, `audit-signal: Slither + AI smart contract audits
 
 Commands (use COMMAND --help for flags):
   setup    Install pinned Slither and solc-select into a local Python environment
@@ -61,9 +61,9 @@ Commands (use COMMAND --help for flags):
   version  Print binary version
 
 Example:
-  slither-agent setup --solc-version 0.8.28
-  slither-agent audit --target contracts --scope owner/private-contracts --ai copilot
-  slither-agent publish --report reports/report.json --repo owner/private-contracts
+  audit-signal setup --solc-version 0.8.28
+  audit-signal audit --target contracts --scope owner/private-contracts --ai copilot
+  audit-signal publish --report reports/report.json --repo owner/private-contracts
 
 No issues are written until publish runs. AI providers: copilot, openai, anthropic.`)
 }
