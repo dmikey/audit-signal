@@ -52,6 +52,9 @@ inputs:
   suite-command-json:
     description: Optional JSON string array of a project test executable and arguments
     default: ''
+  suite-result-format:
+    description: exit-only records command completion; mocha-spec verifies a positive Mocha test count
+    default: exit-only
 outputs:
   report-json:
     description: Absolute path to the machine-readable report
@@ -164,12 +167,14 @@ runs:
       env:
         SUITE_PROJECT: ${{ inputs.suite-project }}
         SUITE_COMMAND_JSON: ${{ inputs.suite-command-json }}
+        SUITE_RESULT_FORMAT: ${{ inputs.suite-result-format }}
       run: |
         set -euo pipefail
         set +e
         "$AUDIT_SIGNAL_BIN" suite --report "$AUDIT_SIGNAL_REPORT/report.json" \
           --source-root "$GITHUB_WORKSPACE" --project "$GITHUB_WORKSPACE/$SUITE_PROJECT" \
-          --command-json "$SUITE_COMMAND_JSON" --out "$AUDIT_SIGNAL_REPORT"
+          --command-json "$SUITE_COMMAND_JSON" --result-format "$SUITE_RESULT_FORMAT" \
+          --out "$AUDIT_SIGNAL_REPORT"
         suite_status=$?
         set -e
         log_path="$(find "$AUDIT_SIGNAL_REPORT" -maxdepth 1 -name 'project-suite-*.log' -print -quit)"

@@ -36,7 +36,8 @@ jobs:
           assert os.path.isfile(os.environ['REPORT_MARKDOWN'])
           assert report['scope'] == 'example/vault'
           assert report['reviewed'] is False
-          assert len(report['project_tests']) == 1 and report['project_tests'][0]['status'] == 'passed'
+          assert len(report['project_tests']) == 1 and report['project_tests'][0]['status'] == 'completed'
+          assert report['project_tests'][0]['result_format'] == 'exit-only'
           assert os.path.isfile(os.environ['SUITE_LOG'])
           assert all(any(layer['stage'] == 'dynamic-test' and layer['status'] == 'not-run' for layer in f['evidence_layers']) for f in report['findings'])
           assert any(f['check'] == 'reentrancy-eth' and f['severity'] == 'High' for f in report['findings'])

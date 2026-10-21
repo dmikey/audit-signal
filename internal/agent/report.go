@@ -243,9 +243,18 @@ func saveReport(dir string, r Report) error {
 		md.WriteString(riskMarkdown(r, ""))
 	}
 	if len(r.ProjectTests) > 0 {
-		md.WriteString("### Project test suites (unmapped)\n\nThese commands ran with audited source hashes unchanged before and after execution. Test harness contents are not attested here. They are not finding-specific exploit reproductions and do not change any finding's dynamic-test status.\n\n")
+		md.WriteString("### Project test suites (unmapped)\n\nAudited source hashes are checked before and after each command; an `error` status can indicate source drift or unverifiable results. Test harness contents are not attested here. These are not finding-specific exploit reproductions and do not change any finding's dynamic-test status.\n\n")
 		for _, run := range r.ProjectTests {
-			fmt.Fprintf(&md, "- **%s**: `%s` in `%s`; exit code %d; log SHA-256 `%s` (`%s`).\n", run.Status, strings.Join(run.Command, " "), run.Project, run.ExitCode, run.LogSHA256, run.LogFile)
+			fmt.Fprintf(&md, "- **%s**: `%s` in `%s`; exit code %d", run.Status, strings.Join(run.Command, " "), run.Project, run.ExitCode)
+			if run.ResultFormat == "mocha-spec" {
+				fmt.Fprintf(&md, "; Mocha spec: %d passing, %d pending, %d failing", run.PassedTests, run.PendingTests, run.FailedTests)
+			} else {
+				md.WriteString("; test count unverified")
+			}
+			if run.ResultError != "" {
+				fmt.Fprintf(&md, "; result error: %s", run.ResultError)
+			}
+			fmt.Fprintf(&md, "; log SHA-256 `%s` (`%s`).\n", run.LogSHA256, run.LogFile)
 		}
 		md.WriteString("\n")
 	}
@@ -355,8 +364,14 @@ func loadReport(path string) (Report, error) {
 		}
 	}
 	for _, run := range r.ProjectTests {
-		if (run.Status != "passed" && run.Status != "failed" && run.Status != "error") || run.Project == "" || len(run.Command) == 0 || run.LogFile == "" || len(run.LogSHA256) != 64 || run.StartedAt == "" {
+		if (run.Status != "passed" && run.Status != "completed" && run.Status != "failed" && run.Status != "error") || run.Project == "" || len(run.Command) == 0 || run.LogFile == "" || len(run.LogSHA256) != 64 || run.StartedAt == "" {
 			return r, fmt.Errorf("invalid project test evidence")
+		}
+		if run.ResultFormat != "" && run.ResultFormat != "exit-only" && run.ResultFormat != "mocha-spec" {
+			return r, fmt.Errorf("invalid project test result format")
+		}
+		if (run.ResultFormat == "exit-only" && run.Status == "passed") || (run.ResultFormat == "mocha-spec" && run.Status == "completed") || (run.ResultFormat == "mocha-spec" && run.Status == "passed" && (run.PassedTests == 0 || run.FailedTests != 0 || run.ResultError != "" || run.Truncated)) {
+			return r, fmt.Errorf("contradictory project test result")
 		}
 		if _, err := hex.DecodeString(run.LogSHA256); err != nil {
 			return r, fmt.Errorf("invalid project test log digest")
