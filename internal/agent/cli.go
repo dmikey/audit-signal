@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = "0.9.0"
+const Version = "0.10.0"
 const SlitherVersion = "0.11.6"
 const SolcSelectVersion = "1.2.0"
 
@@ -259,7 +259,7 @@ func audit(ctx context.Context, args []string, w io.Writer) error {
 			log.Close()
 			return e
 		}
-		cmd := exec.CommandContext(ctx, executable, rel, "--json", jsonPath, "--fail-none")
+		cmd := exec.CommandContext(ctx, executable, rel, "--json", jsonPath, "--json-types", "detectors,compilations", "--fail-none")
 		cmd.Dir = root
 		cmd.Env = env
 		cmd.Stdout = log
@@ -275,6 +275,10 @@ func audit(ctx context.Context, args []string, w io.Writer) error {
 		return err
 	}
 	r.Findings, err = parseSlither(data, *scope, root)
+	if err != nil {
+		return err
+	}
+	r.Coverage, err = buildCoverage(data, root, tgt, sources, *input != "")
 	if err != nil {
 		return err
 	}

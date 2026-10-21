@@ -66,7 +66,7 @@ AI review consumes a bounded source bundle (48 KB by default). It excludes vendo
 
 ### One-step installable action
 
-After checkout, add `uses: dmikey/audit-signal@v0.9.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
+After checkout, add `uses: dmikey/audit-signal@v0.10.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
 
 ```yaml
 name: Smart contract audit
@@ -82,7 +82,7 @@ jobs:
         with:
           persist-credentials: false
       - id: scan
-        uses: dmikey/audit-signal@v0.9.0
+        uses: dmikey/audit-signal@v0.10.0
         with:
           target: '.'
           solc-version: '0.8.28'
@@ -117,7 +117,7 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.9.0
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.10.0
     with:
       target: '.'
       solc-version: '0.8.28'
@@ -142,11 +142,11 @@ For a provider key, add `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` under the **priv
 ```yaml
 jobs:
   audit:
-    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.9.0
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.10.0
     with:
       provider: openai # or anthropic
       model: YOUR_PROVIDER_MODEL_ID
-      agent-ref: v0.9.0
+      agent-ref: v0.10.0
       target: '.'
       publish: false
     secrets:
@@ -177,6 +177,16 @@ Use Foundry v1.8.5 or a version supporting `forge test --json-file`. Compilation
 Reports retain the exact test status, fuzz/invariant execution metadata, harness/config hashes, plan hash, Foundry version and finding IDs without dynamic coverage. Raw `forge-results.json` and `risk.log` are saved beside the reports. Missing/skipped mapped tests, failed tests, malformed output and execution errors fail the stage and block normal review/publication; existing AI review is invalidated before execution. Tests that prove an exploit works should assert the observed loss and pass when it is reproduced. A remediation fixture passing does not repair the original audited contract.
 
 The workflow enables this stage when `risk-project` is set; otherwise dynamic testing is skipped. Its risk stage runs before AI discovery, so tests for newly discovered candidates need a subsequent manual `risk` run or a project-specific workflow adjustment. Run only trusted local suites: FFI and filesystem cheatcode permissions are disabled and credentials are removed from the test process, but Forge is not a complete network sandbox. This tool does not provide RPC endpoints, private keys, deploy contracts or broadcast transactions. A suite with explicit fork/RPC calls would need separate authorization and isolation. No live-chain penetration testing is included.
+
+## Compilation coverage receipt
+
+Every direct scan now emits `coverage.json` and `coverage.md`. Slither exports the compiler units from the **same run** as its detector findings; Audit Signal compares their source files with the target source inventory. The receipt records compiler versions, contract names, source hashes, dependencies, source-bundle exclusions, and any target file missing from compilation. `complete` means every inventoried target source appeared in the exported compilation units and no source or unit was unresolved. It does not mean every execution path was explored. Imported Slither JSON receives `unavailable` coverage because Audit Signal did not witness its compilation.
+
+For a project with imports, point `--target` at its Foundry or Hardhat project directory rather than one Solidity file. [Slither recommends project-level analysis](https://github.com/crytic/slither/blob/master/README.md) when dependencies are involved. The AI source bundle still has a bounded size and omits vendor/generated directories; compiled dependencies are listed separately by hash, without copying their contents into the AI prompt. A source-bundle exclusion is visible even when Slither compiled that dependency.
+
+Set `require_complete_scan: true` in the caller's [policy](examples/coverage/policy.json) to fail the merge gate if coverage is absent, imported, incomplete, or has an unapproved source-bundle exclusion. Review and list intentional paths exactly in `allowed_coverage_exclusions`, for example `"allowed_coverage_exclusions": ["lib"]`; do not use wildcards. Legacy reports without a coverage receipt fail this rule and must be rescanned. The [three-contract fixture](examples/coverage) exercises project compilation in CI, including a contract that is not imported by the other two. A separate unit test removes one compiled source and verifies the gate blocks the partial result.
+
+The coverage receipt is a compiler-input account, not a measurement of detector path coverage, fuzz coverage, or production safety. A green result still requires human review of the protocol's invariant list and the test assertions. The current source-bundle limit remains fail-closed; larger repositories must raise `max-source-bytes` while we add scalable AI chunking.
 
 ## Protocol assurance map
 

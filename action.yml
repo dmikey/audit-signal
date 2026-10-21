@@ -65,6 +65,12 @@ outputs:
   assurance-markdown:
     description: Absolute path to the protocol assurance Markdown when enabled
     value: ${{ steps.report.outputs.assurance-markdown }}
+  coverage-json:
+    description: Absolute path to the compilation coverage receipt
+    value: ${{ steps.report.outputs.coverage-json }}
+  coverage-markdown:
+    description: Absolute path to the human-readable compilation coverage receipt
+    value: ${{ steps.report.outputs.coverage-markdown }}
 runs:
   using: composite
   steps:
@@ -205,3 +211,5 @@ runs:
         echo "gate-markdown=$AUDIT_SIGNAL_REPORT/gate.md" >> "$GITHUB_OUTPUT"
         echo "assurance-json=$AUDIT_SIGNAL_REPORT/assurance.json" >> "$GITHUB_OUTPUT"
         echo "assurance-markdown=$AUDIT_SIGNAL_REPORT/assurance.md" >> "$GITHUB_OUTPUT"
+        echo "coverage-json=$AUDIT_SIGNAL_REPORT/coverage.json" >> "$GITHUB_OUTPUT"
+        echo "coverage-markdown=$AUDIT_SIGNAL_REPORT/coverage.md" >> "$GITHUB_OUTPUT"

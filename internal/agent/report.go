@@ -78,6 +78,7 @@ type Report struct {
 	Reviewed          bool              `json:"reviewed"`
 	Findings          []Finding         `json:"findings"`
 	Sources           map[string]Source `json:"sources"`
+	Coverage          *CoverageReceipt  `json:"coverage,omitempty"`
 	Risk              *RiskRun          `json:"risk,omitempty"`
 }
 type slitherOutput struct {
@@ -233,7 +234,10 @@ func saveReport(dir string, r Report) error {
 		return err
 	}
 	var md strings.Builder
-	fmt.Fprintf(&md, "# Smart contract audit\n\nScope: `%s`\n\nRevision: `%s` (dirty: %t)\n\nSlither: `%s`; AI provider: `%s`; AI model: `%s`; AI reviewed: %t; AI discovery: %t; discovery provider: `%s`; discovery model: `%s`; imported: %t\n\nAutomated findings require human validation. Executed risk tests establish only recorded local harness outcomes, not production safety or a complete security audit. AI source coverage: %d files; dependency/vendor directories are excluded.\n\n%d findings\n\n", r.Scope, r.Revision, r.Dirty, r.SlitherVersion, r.Provider, r.Model, r.Reviewed, r.Discovered, r.DiscoveryProvider, r.DiscoveryModel, r.Imported, len(r.Sources), len(r.Findings))
+	fmt.Fprintf(&md, "# Smart contract audit\n\nScope: `%s`\n\nRevision: `%s` (dirty: %t)\n\nSlither: `%s`; AI provider: `%s`; AI model: `%s`; AI reviewed: %t; AI discovery: %t; discovery provider: `%s`; discovery model: `%s`; imported: %t\n\nAutomated findings require human validation. Executed risk tests establish only recorded local harness outcomes, not production safety or a complete security audit. AI source bundle: %d files; dependency/vendor directories are excluded from AI review.\n\n%d findings\n\n", r.Scope, r.Revision, r.Dirty, r.SlitherVersion, r.Provider, r.Model, r.Reviewed, r.Discovered, r.DiscoveryProvider, r.DiscoveryModel, r.Imported, len(r.Sources), len(r.Findings))
+	if r.Coverage != nil {
+		fmt.Fprintf(&md, "Compilation coverage: **%s** · Target sources: %d · Compiled sources: %d · Unresolved: %d · Exclusions: %d. See `coverage.md`.\n\n", r.Coverage.Status, len(r.Coverage.TargetSources), len(r.Coverage.CompiledSources), len(r.Coverage.Unresolved), len(r.Coverage.Exclusions))
+	}
 	if r.Risk != nil {
 		md.WriteString(riskMarkdown(r, ""))
 	}
@@ -241,7 +245,13 @@ func saveReport(dir string, r Report) error {
 		md.WriteString(issueBody(r, f))
 		md.WriteString("\n---\n\n")
 	}
-	return os.WriteFile(filepath.Join(dir, "report.md"), []byte(md.String()), 0600)
+	if err := os.WriteFile(filepath.Join(dir, "report.md"), []byte(md.String()), 0600); err != nil {
+		return err
+	}
+	if r.Coverage != nil {
+		return saveCoverage(dir, *r.Coverage)
+	}
+	return nil
 }
 
 func loadReport(path string) (Report, error) {
@@ -299,6 +309,11 @@ func loadReport(path string) (Report, error) {
 	for name, src := range r.Sources {
 		if digest(src.Content) != src.SHA256 {
 			return r, fmt.Errorf("source digest mismatch: %s", name)
+		}
+	}
+	if r.Coverage != nil {
+		if err := validateCoverage(*r.Coverage, r.Sources); err != nil {
+			return r, err
 		}
 	}
 	if r.Reviewed {

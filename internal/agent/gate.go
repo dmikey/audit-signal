@@ -17,13 +17,15 @@ import (
 // in the caller repository. The evidence modes are alternatives, not an
 // implication that an AI verdict or a detector hit proves an exploit.
 type GatePolicy struct {
-	Version                  int    `json:"version"`
-	MinimumSeverity          string `json:"minimum_severity"`
-	Evidence                 string `json:"evidence"`
-	AllowImported            bool   `json:"allow_imported"`
-	AllowDirty               bool   `json:"allow_dirty"`
-	RequireAssurance         bool   `json:"require_assurance,omitempty"`
-	MinimumInvariantSeverity string `json:"minimum_invariant_severity,omitempty"`
+	Version                   int      `json:"version"`
+	MinimumSeverity           string   `json:"minimum_severity"`
+	Evidence                  string   `json:"evidence"`
+	AllowImported             bool     `json:"allow_imported"`
+	AllowDirty                bool     `json:"allow_dirty"`
+	RequireAssurance          bool     `json:"require_assurance,omitempty"`
+	MinimumInvariantSeverity  string   `json:"minimum_invariant_severity,omitempty"`
+	RequireCompleteScan       bool     `json:"require_complete_scan,omitempty"`
+	AllowedCoverageExclusions []string `json:"allowed_coverage_exclusions,omitempty"`
 }
 
 type GateAcceptance struct {
@@ -61,6 +63,13 @@ type GateResult struct {
 	Decisions          []GateDecision          `json:"decisions"`
 	InvariantDecisions []GateInvariantDecision `json:"invariant_decisions,omitempty"`
 	Assurance          *AssuranceResult        `json:"assurance,omitempty"`
+	CoverageDecision   *GateCoverageDecision   `json:"coverage_decision,omitempty"`
+}
+
+type GateCoverageDecision struct {
+	Status  string   `json:"status"`
+	Blocked bool     `json:"blocked"`
+	Reasons []string `json:"reasons"`
 }
 
 type GateInvariantDecision struct {
@@ -99,6 +108,16 @@ func validateGatePolicy(p GatePolicy) error {
 	}
 	if !p.RequireAssurance && p.MinimumInvariantSeverity != "" {
 		return fmt.Errorf("minimum_invariant_severity requires require_assurance")
+	}
+	if !p.RequireCompleteScan && len(p.AllowedCoverageExclusions) > 0 {
+		return fmt.Errorf("allowed_coverage_exclusions requires require_complete_scan")
+	}
+	seenExclusions := map[string]bool{}
+	for _, path := range p.AllowedCoverageExclusions {
+		if !safeSourcePath(path) || seenExclusions[path] {
+			return fmt.Errorf("invalid or duplicate allowed coverage exclusion %q", path)
+		}
+		seenExclusions[path] = true
 	}
 	switch p.Evidence {
 	case "slither-detected", "ai-reviewed", "local-exploit-test":
@@ -198,6 +217,31 @@ func evaluateGate(r Report, p GatePolicy, baseline GateBaseline, today time.Time
 		result.Decisions = append(result.Decisions, d)
 	}
 	sort.Slice(result.Decisions, func(i, j int) bool { return result.Decisions[i].FindingID < result.Decisions[j].FindingID })
+	if p.RequireCompleteScan {
+		decision := &GateCoverageDecision{Status: "unavailable", Reasons: []string{}}
+		if r.Coverage == nil {
+			decision.Reasons = append(decision.Reasons, "report has no compilation coverage receipt")
+		} else {
+			decision.Status = r.Coverage.Status
+			if r.Coverage.Status != "complete" {
+				decision.Reasons = append(decision.Reasons, r.Coverage.Unresolved...)
+			}
+			allowed := map[string]bool{}
+			for _, path := range p.AllowedCoverageExclusions {
+				allowed[path] = true
+			}
+			for _, exclusion := range r.Coverage.Exclusions {
+				if !allowed[exclusion.Path] {
+					decision.Reasons = append(decision.Reasons, "unapproved source-bundle exclusion: "+exclusion.Path)
+				}
+			}
+		}
+		if len(decision.Reasons) > 0 {
+			decision.Blocked = true
+			result.Blocked++
+		}
+		result.CoverageDecision = decision
+	}
 	result.Passed = result.Blocked == 0
 	return result, nil
 }
@@ -239,6 +283,12 @@ func saveGateResult(dir string, result GateResult) error {
 		md.WriteString("\n## Protocol invariants\n\n")
 		for _, d := range result.InvariantDecisions {
 			fmt.Fprintf(&md, "- `%s` (%s): **%s**; blocked: %t\n", d.ID, d.Severity, d.Status, d.Blocked)
+		}
+	}
+	if result.CoverageDecision != nil {
+		fmt.Fprintf(&md, "\n## Compilation coverage\n\nStatus: **%s** · Blocked: %t\n\n", result.CoverageDecision.Status, result.CoverageDecision.Blocked)
+		for _, reason := range result.CoverageDecision.Reasons {
+			fmt.Fprintf(&md, "- %s\n", reason)
 		}
 	}
 	return os.WriteFile(filepath.Join(dir, "gate.md"), []byte(md.String()), 0600)

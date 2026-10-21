@@ -25,6 +25,7 @@ jobs:
           REPORT_JSON: ${{ steps.audit.outputs.report-json }}
           REPORT_MARKDOWN: ${{ steps.audit.outputs.report-markdown }}
           ASSURANCE_JSON: ${{ steps.audit.outputs.assurance-json }}
+          COVERAGE_JSON: ${{ steps.audit.outputs.coverage-json }}
         run: |
           python3 - <<'PY'
           import json, os
@@ -37,6 +38,9 @@ jobs:
           with open(os.environ['ASSURANCE_JSON']) as f:
               assurance = json.load(f)
           assert all(i['status'] == 'untested' for i in assurance['invariants'])
+          with open(os.environ['COVERAGE_JSON']) as f:
+              coverage = json.load(f)
+          assert coverage['status'] == 'complete' and len(coverage['target_sources']) == 1, coverage
           PY
   action-policy-smoke:
     runs-on: ubuntu-latest
@@ -141,6 +145,20 @@ jobs:
           assert gate['passed'] and gate['blocked'] == 0, gate
           assert all(t['subject_source'] == 'examples/risk/src/FixedVault.sol' for i in assurance['invariants'] for t in i['tests'])
           PY
+      - name: Verify multi-contract compilation coverage and merge gate
+        run: |
+          ./bin/audit-signal audit --target examples/coverage --scope example/coverage --ai none --solc-version 0.8.28 --out reports/coverage
+          ./bin/audit-signal gate --report reports/coverage/report.json --policy examples/coverage/policy.json --out reports/coverage
+          python3 - <<'PY'
+          import json
+          with open('reports/coverage/coverage.json') as f: coverage = json.load(f)
+          with open('reports/coverage/gate.json') as f: gate = json.load(f)
+          expected = {'examples/coverage/src/Ledger.sol', 'examples/coverage/src/Router.sol', 'examples/coverage/src/Policy.sol'}
+          assert coverage['status'] == 'complete' and not coverage['unresolved'], coverage
+          assert {x['path'] for x in coverage['target_sources']} == expected, coverage
+          assert expected <= {x['path'] for x in coverage['compiled_sources']}, coverage
+          assert gate['passed'] and gate['coverage_decision']['status'] == 'complete', gate
+          PY
       - name: Scan independent-discovery fixture with real Slither
         run: ./bin/audit-signal audit --target examples/RewardPool.sol --scope example/reward-pool --ai none --solc-version 0.8.28 --out reports/reward-pool
       - name: Reproduce reward claim exploit in local EVM
@@ -180,6 +198,11 @@ jobs:
         with:
           name: example-fixed-vault-assurance
           path: reports/fixed-vault/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: example-multi-contract-coverage
+          path: reports/coverage/
           retention-days: 7
   binaries:
     runs-on: ubuntu-latest

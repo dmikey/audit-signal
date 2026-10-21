@@ -1,5 +1,7 @@
 # Example audits
 
+The [three-contract compilation fixture](coverage) checks that the coverage receipt includes both an imported dependency and an independent contract. Its [policy](coverage/policy.json) requires complete coverage. CI verifies the real Slither export and the merge-gate decision; this is a coverage check, not a claim that the fixture has no vulnerabilities.
+
 ## Independent discovery example: RewardPool
 
 [RewardPool.sol](RewardPool.sol) is another intentionally vulnerable fixture. Its `claimFor` function calculates rewards for a beneficiary but reads and updates `lastClaimEpoch` for the caller. The live Copilot discovery pass identified this mismatch as a separate High-severity candidate. Eleven fresh callers can claim for the same beneficiary in one epoch. The [Foundry test](risk/test/RewardPoolRisk.t.sol) passes after paying 1.1 ETH from a pool with only 1 ETH of reward funding, leaving 0.9 ETH to back a 1 ETH stake; full stake withdrawal then fails. This is a local fixture proof, not a deployed-contract exploit.
