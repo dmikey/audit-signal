@@ -262,3 +262,74 @@ print('******'+json.dumps({'reviews':[{'id':f['id'],'verdict':'needs-review','re
 		t.Fatalf("existing gh login fallback failed: %v", err)
 	}
 }
+
+func TestReviewerBatchesFindingsAndCommitsOnlyCompleteReview(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX mock process")
+	}
+	makeReport := func() Report {
+		findings := make([]Finding, 17)
+		for i := range findings {
+			findings[i] = Finding{ID: fmt.Sprintf("finding-%02d", i), Check: "test", Severity: "Medium"}
+		}
+		return Report{Scope: "private/contracts", Findings: findings, Sources: map[string]Source{
+			"Vault.sol": {Content: "contract Vault {}", SHA256: digest("contract Vault {}")},
+		}}
+	}
+	makeCopilot := func(failSecond bool) (string, string) {
+		t.Helper()
+		dir := t.TempDir()
+		script := filepath.Join(dir, "fake-copilot")
+		fail := "False"
+		if failSecond {
+			fail = "True"
+		}
+		code := fmt.Sprintf(`#!/usr/bin/env python3
+import json,pathlib,sys
+counter=pathlib.Path(__file__).with_suffix('.calls')
+n=int(counter.read_text())+1 if counter.exists() else 1
+counter.write_text(str(n))
+payload=json.loads(sys.stdin.read().split('UNTRUSTED AUDIT PAYLOAD:\n',1)[1])
+assert len(payload['findings']) <= 8
+assert payload['sources']['Vault.sol']['content'] == 'contract Vault {}'
+reviews=[{'id':f['id'],'verdict':'needs-review','reasoning':'source needs review','exploit_scenario':'requires an adversarial call','remediation':'review state change','validation':'run a regression test'} for f in payload['findings']]
+if %s and n == 2: reviews.pop()
+print(json.dumps({'reviews':reviews}))
+`, fail)
+		if err := os.WriteFile(script, []byte(code), 0700); err != nil {
+			t.Fatal(err)
+		}
+		return script, filepath.Join(dir, "fake-copilot.calls")
+	}
+	t.Setenv("GH_TOKEN", "fake-review-token")
+	script, countPath := makeCopilot(false)
+	r := makeReport()
+	if err := reviewReport(context.Background(), &r, script, "auto"); err != nil {
+		t.Fatal(err)
+	}
+	count, err := os.ReadFile(countPath)
+	if err != nil || string(count) != "3" {
+		t.Fatalf("expected three batches, got %q: %v", count, err)
+	}
+	if !r.Reviewed {
+		t.Fatal("complete batched review was not recorded")
+	}
+	for _, f := range r.Findings {
+		if f.Review == nil || f.Review.ID != f.ID {
+			t.Fatalf("missing review for %s", f.ID)
+		}
+	}
+	script, _ = makeCopilot(true)
+	r = makeReport()
+	if err := reviewReport(context.Background(), &r, script, "auto"); err == nil {
+		t.Fatal("accepted an incomplete second batch")
+	}
+	if r.Reviewed {
+		t.Fatal("incomplete report was marked reviewed")
+	}
+	for _, f := range r.Findings {
+		if f.Review != nil {
+			t.Fatalf("partial review was committed for %s", f.ID)
+		}
+	}
+}
