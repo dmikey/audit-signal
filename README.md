@@ -71,7 +71,7 @@ AI review consumes a bounded source bundle (48 KB by default). It excludes vendo
 
 ### One-step installable action
 
-After checkout, add `uses: dmikey/audit-signal@v0.10.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
+After checkout, add `uses: dmikey/audit-signal@v0.12.0` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
 
 ```yaml
 name: Smart contract audit
@@ -87,7 +87,7 @@ jobs:
         with:
           persist-credentials: false
       - id: scan
-        uses: dmikey/audit-signal@v0.10.0
+        uses: dmikey/audit-signal@v0.12.0
         with:
           target: '.'
           solc-version: '0.8.28'
@@ -133,7 +133,7 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.10.0
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.12.0
     with:
       target: '.'
       solc-version: '0.8.28'
@@ -159,11 +159,11 @@ For a provider key, add `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` under the **priv
 ```yaml
 jobs:
   audit:
-    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.10.0
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.12.0
     with:
       provider: openai # or anthropic
       model: YOUR_PROVIDER_MODEL_ID
-      agent-ref: v0.10.0
+      agent-ref: v0.12.0
       target: '.'
       publish: false
     secrets:
