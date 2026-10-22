@@ -347,7 +347,13 @@ func loadReport(path string) (Report, error) {
 		if r.Risk.Environment != "local-evm" || (r.Risk.Status != "passed" && r.Risk.Status != "failed" && r.Risk.Status != "error") {
 			return r, fmt.Errorf("invalid risk evidence")
 		}
+		if r.Risk.Runner != "" && r.Risk.Runner != "foundry" && r.Risk.Runner != "hardhat" {
+			return r, fmt.Errorf("invalid risk runner")
+		}
 		for _, e := range r.Risk.Evidence {
+			if e.LogFile != "" && (filepath.Base(e.LogFile) != e.LogFile || len(e.LogSHA256) != 64) {
+				return r, fmt.Errorf("invalid risk test log evidence")
+			}
 			if len(e.InvariantIDs) > 0 {
 				if !safeSourcePath(e.SubjectSource) {
 					return r, fmt.Errorf("invalid invariant subject source")
@@ -408,12 +414,20 @@ func findingEvidenceLayers(r Report, f Finding) []EvidenceLayer {
 	if r.Risk == nil {
 		return append(layers, EvidenceLayer{Stage: "dynamic-test", Status: "not-run"})
 	}
-	version := strings.SplitN(r.Risk.ForgeVersion, "\n", 2)[0]
+	tool := r.Risk.Runner
+	if tool == "" {
+		tool = "foundry"
+	}
+	version := r.Risk.RunnerVersion
+	if version == "" {
+		version = r.Risk.ForgeVersion
+	}
+	version = strings.SplitN(version, "\n", 2)[0]
 	matched := false
 	for _, e := range r.Risk.Evidence {
 		for _, id := range e.FindingIDs {
 			if id == f.ID {
-				layers = append(layers, EvidenceLayer{Stage: "dynamic-test", Tool: "foundry", Version: version, Status: e.Status, Suite: e.Suite, Test: e.Test, Claim: e.Claim})
+				layers = append(layers, EvidenceLayer{Stage: "dynamic-test", Tool: tool, Version: version, Status: e.Status, Suite: e.Suite, Test: e.Test, Claim: e.Claim})
 				matched = true
 				break
 			}

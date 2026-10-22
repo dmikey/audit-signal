@@ -14,6 +14,7 @@ import (
 )
 
 type RiskCase struct {
+	FindingID     string   `json:"finding_id,omitempty"`
 	Check         string   `json:"check"`
 	File          string   `json:"file,omitempty"`
 	Line          int      `json:"line,omitempty"`
@@ -30,10 +31,14 @@ type RiskEvidence struct {
 	Status     string          `json:"status"`
 	Reason     string          `json:"reason,omitempty"`
 	Kind       json.RawMessage `json:"kind"`
+	LogFile    string          `json:"log_file,omitempty"`
+	LogSHA256  string          `json:"log_sha256,omitempty"`
 }
 type RiskRun struct {
 	Status             string            `json:"status"`
 	Environment        string            `json:"environment"`
+	Runner             string            `json:"runner,omitempty"`
+	RunnerVersion      string            `json:"runner_version,omitempty"`
 	Project            string            `json:"project,omitempty"`
 	ForgeVersion       string            `json:"forge_version"`
 	StartedAt          string            `json:"started_at"`
@@ -169,7 +174,7 @@ func riskCommand(ctx context.Context, args []string, w io.Writer) error {
 	cmd.Env = env
 	cmd.Stdout = log
 	cmd.Stderr = log
-	risk := RiskRun{Status: "error", Environment: "local-evm", Project: filepath.ToSlash(projectRel), ForgeVersion: string(bytes.TrimSpace(ver)), StartedAt: time.Now().UTC().Format(time.RFC3339), PlanSHA256: digest(string(planData)), HarnessHashes: hashes, Evidence: []RiskEvidence{}, UntestedFindingIDs: []string{}}
+	risk := RiskRun{Status: "error", Environment: "local-evm", Runner: "foundry", RunnerVersion: string(bytes.TrimSpace(ver)), Project: filepath.ToSlash(projectRel), ForgeVersion: string(bytes.TrimSpace(ver)), StartedAt: time.Now().UTC().Format(time.RFC3339), PlanSHA256: digest(string(planData)), HarnessHashes: hashes, Evidence: []RiskEvidence{}, UntestedFindingIDs: []string{}}
 	// New evidence invalidates an earlier AI review, including when tests fail.
 	r.Risk = &risk
 	r.Reviewed = false
@@ -246,10 +251,13 @@ func parseRiskPlan(data []byte, r Report) ([]RiskCase, error) {
 		if c.Check != "" {
 			selectorCount++
 		}
+		if c.FindingID != "" {
+			selectorCount++
+		}
 		if c.File != "" {
 			selectorCount++
 		}
-		if selectorCount > 1 || (selectorCount == 0 && len(c.InvariantIDs) == 0) || (selectorCount == 1 && !matches) || (c.Check != "" && c.Line != 0) || (c.File != "" && (c.Line < 1 || !safeSourcePath(c.File))) || c.Suite == "" || c.Test == "" || c.Description == "" || (c.Claim != "exploit-reproduced" && c.Claim != "mitigation-holds" && c.Claim != "risk-property") {
+		if selectorCount > 1 || (selectorCount == 0 && len(c.InvariantIDs) == 0) || (selectorCount == 1 && !matches) || (c.Check != "" && c.Line != 0) || (c.FindingID != "" && (len(c.FindingID) != 64 || c.Line != 0)) || (c.File != "" && (c.Line < 1 || !safeSourcePath(c.File))) || c.Suite == "" || c.Test == "" || c.Description == "" || (c.Claim != "exploit-reproduced" && c.Claim != "mitigation-holds" && c.Claim != "risk-property") {
 			return nil, fmt.Errorf("invalid risk case or finding selector not present in report: %s", c.Test)
 		}
 		if len(c.InvariantIDs) > 0 {
@@ -279,6 +287,7 @@ func parseRiskPlan(data []byte, r Report) ([]RiskCase, error) {
 }
 
 func riskCaseMatches(c RiskCase, f Finding) bool {
+	if c.FindingID != "" { return c.FindingID == f.ID }
 	if c.Check != "" {
 		return c.Check == f.Check
 	}
@@ -357,12 +366,19 @@ func riskMarkdown(r Report, id string) string {
 	fmt.Fprintf(&b, "\n### Executed risk tests\n\nEnvironment: **%s** · Stage: **%s** · Passed: %d · Failed: %d · Skipped: %d\n\n", r.Risk.Environment, r.Risk.Status, r.Risk.Passed, r.Risk.Failed, r.Risk.Skipped)
 	matched := false
 	for _, e := range r.Risk.Evidence {
+		if id == "" && len(e.FindingIDs) == 0 {
+			matched = true
+			fmt.Fprintf(&b, "- `%s:%s` — **%s**, plan claim: **%s**. %s\n", e.Suite, e.Test, e.Status, e.Claim, e.Description)
+			if e.LogFile != "" { fmt.Fprintf(&b, "  Private log: `%s` · SHA-256 `%s`\n", e.LogFile, e.LogSHA256) }
+			continue
+		}
 		for _, fid := range e.FindingIDs {
 			if id != "" && fid != id {
 				continue
 			}
 			matched = true
 			fmt.Fprintf(&b, "- `%s:%s` — **%s**, plan claim: **%s**. %s\n", e.Suite, e.Test, e.Status, e.Claim, e.Description)
+			if e.LogFile != "" { fmt.Fprintf(&b, "  Private log: `%s` · SHA-256 `%s`\n", e.LogFile, e.LogSHA256) }
 			if len(e.Kind) > 0 {
 				fmt.Fprintf(&b, "  Execution: `%s`\n", string(e.Kind))
 			}
