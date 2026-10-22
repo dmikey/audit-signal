@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "vulnerable vault reentrancy is detected",
+      "report": "out/vulnerable/report.json",
+      "scope": "example/vault",
+      "target": "VulnerableVault.sol",
+      "check": "reentrancy-eth",
+      "expected": "present"
+    },
+    {
+      "name": "repaired vault has no reentrancy detector",
+      "report": "out/fixed/report.json",
+      "scope": "example/fixed-vault",
+      "target": "FixedVault.sol",
+      "check": "reentrancy-eth",
+      "expected": "absent"
+    }
+  ]
+}

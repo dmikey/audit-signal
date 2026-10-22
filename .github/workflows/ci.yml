@@ -234,6 +234,12 @@ jobs:
           assert expected <= {x['path'] for x in coverage['compiled_sources']}, coverage
           assert gate['passed'] and gate['coverage_decision']['status'] == 'complete', gate
           PY
+      - name: Score vulnerable and repaired vault detection
+        run: |
+          mkdir -p examples/benchmark/out/vulnerable examples/benchmark/out/fixed
+          cp reports/report.json examples/benchmark/out/vulnerable/report.json
+          cp reports/fixed-vault/report.json examples/benchmark/out/fixed/report.json
+          ./bin/audit-signal benchmark --manifest examples/benchmark/manifest.json --expected-revision "$GITHUB_SHA" --out examples/benchmark/out/score.json
       - name: Scan independent-discovery fixture with real Slither
         run: ./bin/audit-signal audit --target examples/RewardPool.sol --scope example/reward-pool --ai none --solc-version 0.8.28 --out reports/reward-pool
       - name: Reproduce reward claim exploit in local EVM

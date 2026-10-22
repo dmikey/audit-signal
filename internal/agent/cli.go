@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = "0.11.0"
+const Version = "0.12.0"
 const SlitherVersion = "0.11.6"
 const SolcSelectVersion = "1.2.0"
 
@@ -49,6 +49,10 @@ func Run(ctx context.Context, args []string, w io.Writer) error {
 		return renderCommand(args[1:], w)
 	case "gate":
 		return gateCommand(args[1:], w)
+	case "triage":
+		return triageCommand(args[1:], w)
+	case "benchmark":
+		return benchmarkCommand(args[1:], w)
 	case "publish":
 		return publishCommand(ctx, args[1:], w)
 	default:
@@ -69,6 +73,8 @@ Commands (use COMMAND --help for flags):
   assure   Map protocol invariants to audited sources and local test evidence
   render   Rebuild Markdown and evidence-layer JSON from a saved report
   gate     Apply a versioned merge policy and accepted-finding baseline
+  triage   Create and validate source-bound human publication decisions
+  benchmark Score fresh labeled vulnerable and repaired contract scans
   publish  Create/update deduplicated security issues from a reviewed report
   version  Print binary version
 
