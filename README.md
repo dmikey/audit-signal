@@ -75,7 +75,7 @@ AI review consumes a bounded source bundle (48 KB by default). It excludes vendo
 
 ### One-step installable action
 
-After checkout, add `uses: dmikey/audit-signal@v0.12.3` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
+After checkout, add `uses: dmikey/audit-signal@v0.12.4` to an Ubuntu or macOS job. The action builds the Go binary, installs pinned Slither and the requested compiler in runner temporary storage, scans the target, and exposes both report paths. It attempts Copilot review by default when the caller grants `copilot-requests: write`; if Copilot is unavailable, the job fails visibly:
 
 ```yaml
 name: Smart contract audit
@@ -91,7 +91,7 @@ jobs:
         with:
           persist-credentials: false
       - id: scan
-        uses: dmikey/audit-signal@v0.12.3
+        uses: dmikey/audit-signal@v0.12.4
         with:
           target: '.'
           solc-version: '0.8.28'
@@ -137,7 +137,7 @@ permissions:
   issues: write
 jobs:
   audit:
-    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.12.3
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.12.4
     with:
       target: '.'
       solc-version: '0.8.28'
@@ -163,11 +163,11 @@ For a provider key, add `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` under the **priv
 ```yaml
 jobs:
   audit:
-    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.12.3
+    uses: dmikey/audit-signal/.github/workflows/audit.yml@v0.12.4
     with:
       provider: openai # or anthropic
       model: YOUR_PROVIDER_MODEL_ID
-      agent-ref: v0.12.3
+      agent-ref: v0.12.4
       target: '.'
       publish: false
     secrets:
@@ -286,7 +286,7 @@ The tool writes `report.json`, `report.md`, and `slither.log`. JSON contains sou
 
 Use `audit-signal render --report path/to/report.json` to add the layer view to an existing report without running Slither, Copilot or Foundry again. It rewrites `report.json` and `report.md` beside the input unless `--out` selects another directory.
 
-`triage init` creates a versioned decision file for every finding at or above its minimum severity. A human fills each `pending` record with `hold` or `publish`, an owner, and a reason. `triage check` rejects missing or duplicate decisions, stale scope or source hashes, and publication decisions without a `likely-valid` AI review. A new source set requires fresh decisions. The [Playmos pilot](https://github.com/playmos-labs/playmos-sdk/pull/955) exercises this gate against a private contract repository.
+`triage init` creates a versioned decision file for every finding at or above its minimum severity. A human fills each `pending` record with `hold` or `publish`, an owner, and a reason. `triage check` requires a decision for every current finding at the minimum severity, rejects duplicates, stale scope or source hashes, and publication decisions without a `likely-valid` AI review. It preserves an owned `hold` for a source-bound AI candidate that is absent from a later nondeterministic discovery run, but never accepts an absent `publish` decision. A new source set requires fresh decisions. The [Playmos pilot](https://github.com/playmos-labs/playmos-sdk/pull/955) exercises this gate against a private contract repository.
 
 `publish` requires `--triage-file` by default and only selects findings marked `publish`. `--allow-untriaged` is an explicit compatibility override; the reusable workflow does not use it. Publication otherwise defaults to Medium and High findings with a `likely-valid` AI verdict, at most 20 selected findings. `--min-severity Low` includes Low findings; `--verdict needs-review` or `--verdict all` changes review filtering; `--finding-id` selects one exact candidate; `--max-issues` changes the cap. Exceeding the cap fails before issue writes. Normal publication requires a complete AI review; `--allow-unreviewed` explicitly permits static-only candidates. Public destinations are blocked unless `--allow-public-destination` is supplied.
 
