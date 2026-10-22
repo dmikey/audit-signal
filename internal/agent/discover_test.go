@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,5 +50,26 @@ print(json.dumps({'findings':[{'check':'reward-claim-key-mismatch','title':'Wron
 	grounded, err := parseDiscoveries(r.Scope, r.Sources, nil, misnumbered)
 	if err != nil || len(grounded) != 1 || grounded[0].Locations[0].Lines[0] != 3 {
 		t.Fatalf("unique source excerpt was not normalized: %v", err)
+	}
+}
+
+func TestDiscoverySkipsDetectorOverlapAndKeepsDistinctCandidate(t *testing.T) {
+	code := "contract Pool {\n    mapping(address => uint) public last;\n    function claim(address beneficiary) public { uint delta = last[msg.sender]; }\n}\n"
+	sources := map[string]Source{"Pool.sol": {Content: code, SHA256: digest(code)}}
+	existing := []Finding{{Origin: "slither", Severity: "Medium", Locations: []Location{{File: "Pool.sol", Lines: []int{3}}}}}
+	base := candidate{Check: "claim-key-mismatch", Title: "Claim key mismatch", Severity: "Medium", Description: "A claim may use the wrong key", File: "Pool.sol", Line: 3, SourceExcerpt: "function claim(address beneficiary) public { uint delta = last[msg.sender]; }", ExploitScenario: "A caller changes addresses", Remediation: "Use the intended key", Validation: "Test two callers"}
+	distinct := base
+	distinct.Check = "public-state-exposure"
+	distinct.Line = 2
+	distinct.SourceExcerpt = "mapping(address => uint) public last;"
+	data, err := json.Marshal(struct {
+		Findings []candidate `json:"findings"`
+	}{[]candidate{base, distinct}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := parseDiscoveries("example/pool", sources, existing, data)
+	if err != nil || len(got) != 1 || got[0].Check != "ai-public-state-exposure" {
+		t.Fatalf("overlap should be skipped without dropping distinct candidate: %+v, %v", got, err)
 	}
 }

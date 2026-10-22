@@ -167,6 +167,7 @@ func parseDiscoveries(scope string, sources map[string]Source, existing []Findin
 		if seen[id] {
 			return nil, fmt.Errorf("AI discovery contains duplicate candidates")
 		}
+		overlaps := false
 		for _, prior := range existing {
 			if prior.Origin == "slither" && rank(prior.Severity) >= rank("Medium") {
 				for _, loc := range prior.Locations {
@@ -175,11 +176,16 @@ func parseDiscoveries(scope string, sources map[string]Source, existing []Findin
 					}
 					for _, priorLine := range loc.Lines {
 						if priorLine == line {
-							return nil, fmt.Errorf("AI discovery overlaps an existing Slither security finding")
+							overlaps = true
 						}
 					}
 				}
 			}
+		}
+		if overlaps {
+			// A model can repeat a detector despite the prompt. Keep the
+			// detector finding and continue reviewing distinct candidates.
+			continue
 		}
 		seen[id] = true
 		findings = append(findings, Finding{ID: id, Check: check, Severity: c.Severity, Confidence: "AI hypothesis", Description: c.Title + ": " + c.Description, Locations: []Location{{File: c.File, Lines: []int{line}}}, Origin: "ai-discovery", Discovery: &DiscoveryEvidence{SourceExcerpt: excerpt, ExploitScenario: c.ExploitScenario, Remediation: c.Remediation, Validation: c.Validation}})
