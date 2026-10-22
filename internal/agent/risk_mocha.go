@@ -82,11 +82,39 @@ func riskMochaCommand(ctx context.Context, args []string, w io.Writer) error {
 		if statErr != nil || !info.Mode().IsRegular() {
 			return fmt.Errorf("mapped Hardhat test file missing or unsafe: %s", c.Suite)
 		}
+	}
+	var harnessBytes int64
+	err = filepath.WalkDir(filepath.Join(projectAbs, "test"), func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("Hardhat test harness contains a symlink: %s", path)
+		}
+		if entry.IsDir() || !(strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".js")) {
+			return nil
+		}
+		info, statErr := entry.Info()
+		if statErr != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("unsafe Hardhat test harness file: %s", path)
+		}
+		harnessBytes += info.Size()
+		if harnessBytes > 4*1024*1024 {
+			return fmt.Errorf("Hardhat test harness exceeds 4 MiB")
+		}
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return readErr
 		}
-		hashes[c.Suite] = digest(string(data))
+		rel, relErr := filepath.Rel(projectAbs, path)
+		if relErr != nil {
+			return relErr
+		}
+		hashes[filepath.ToSlash(rel)] = digest(string(data))
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	for _, name := range []string{"hardhat.config.ts", "hardhat.config.js", "package-lock.json"} {
 		path := filepath.Join(projectAbs, name)
