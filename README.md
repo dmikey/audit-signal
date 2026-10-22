@@ -50,7 +50,7 @@ export OPENAI_API_KEY='your-key-from-a-secret-manager'
 # Or: ANTHROPIC_API_KEY with --provider anthropic --model YOUR_ANTHROPIC_MODEL
 ```
 
-To search for flaws beyond Slither's detectors, run `discover` after the static audit, then `review` before publication. Discovery requires exact source file, line and excerpt evidence for each candidate. A new discovery clears any prior review, and the reviewer evaluates all findings together. The model may miss flaws or propose false positives; a line match establishes provenance, not exploitability. To make a discovery concrete, add a project-specific Foundry test and map its source file and line in the risk plan; this survives model-generated check-name changes.
+To search for flaws beyond Slither's detectors, run `discover` after the static audit, then `review` before publication. Discovery requires exact source file, line and excerpt evidence for each candidate. Candidates on the same source line as an existing Medium-or-higher Slither finding are discarded as overlaps while distinct candidates continue to triage. A new discovery clears any prior review, and the reviewer evaluates all findings together. The model may miss flaws or propose false positives; a line match establishes provenance, not exploitability. To make a discovery concrete, add a project-specific Foundry test and map its source file and line in the risk plan; this survives model-generated check-name changes.
 
 ```sh
 ./bin/audit-signal audit --target contracts --scope owner/contracts --ai none
