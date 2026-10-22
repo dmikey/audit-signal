@@ -55,6 +55,10 @@ on:
         description: Source-bound human decisions in the caller repository; required when publish is true
         type: string
         default: ''
+      curated-findings-file:
+        description: Source-bound retained findings in the caller repository
+        type: string
+        default: ''
       policy-file:
         description: Optional policy JSON path in the caller repository; enables a merge gate
         type: string
@@ -70,7 +74,7 @@ on:
       agent-ref:
         description: Tool revision; pin to a reviewed commit for production
         type: string
-        default: v0.12.0
+        default: v0.12.1
     secrets:
       COPILOT_TOKEN:
         description: Optional PAT with Copilot Requests; needed for personal repositories
@@ -143,6 +147,13 @@ jobs:
             --scope "$SCOPE" --ai none --out scan-report \
             --venv audit-tool/.slither-venv \
             --solc-version "$SOLC" --max-source-bytes "$SOURCE_LIMIT"
+      - name: Retain source-bound findings
+        if: inputs.curated-findings-file != ''
+        env:
+          CURATED_FINDINGS_FILE: ${{ inputs.curated-findings-file }}
+        run: |
+          ./audit-tool/bin/audit-signal curate --report scan-report/report.json \
+            --file "contracts-repo/$CURATED_FINDINGS_FILE" --out scan-report
       - name: Execute local penetration and risk tests before AI review
         if: inputs.risk-project != ''
         env:

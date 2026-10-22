@@ -49,6 +49,9 @@ inputs:
   triage-file:
     description: Optional source-bound human decision file to validate after AI review
     default: ''
+  curated-findings-file:
+    description: Optional source-bound findings to retain and re-review after a fresh Slither scan
+    default: ''
   suite-project:
     description: Trusted test project path within the caller checkout
     default: '.'
@@ -167,6 +170,14 @@ runs:
         "$AUDIT_SIGNAL_BIN" audit --target "$TARGET" --scope "$SCOPE" \
           --ai none --venv "$AUDIT_SIGNAL_VENV" --solc-version "$SOLC_VERSION" \
           --max-source-bytes "$MAX_SOURCE_BYTES" --out "$AUDIT_SIGNAL_REPORT"
+    - name: Retain source-bound findings
+      if: inputs.curated-findings-file != ''
+      shell: bash
+      env:
+        CURATED_FINDINGS_FILE: ${{ inputs.curated-findings-file }}
+      run: |
+        "$AUDIT_SIGNAL_BIN" curate --report "$AUDIT_SIGNAL_REPORT/report.json" \
+          --file "$CURATED_FINDINGS_FILE" --out "$AUDIT_SIGNAL_REPORT"
     - name: Run trusted project test suite
       id: suite
       if: inputs.suite-command-json != ''

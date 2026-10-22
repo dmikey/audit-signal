@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const Version = "0.12.0"
+const Version = "0.12.1"
 const SlitherVersion = "0.11.6"
 const SolcSelectVersion = "1.2.0"
 
@@ -37,6 +37,8 @@ func Run(ctx context.Context, args []string, w io.Writer) error {
 		return reviewCommand(ctx, args[1:], w)
 	case "discover":
 		return discoverCommand(ctx, args[1:], w)
+	case "curate":
+		return curateCommand(args[1:], w)
 	case "risk":
 		return riskCommand(ctx, args[1:], w)
 	case "risk-mocha":
@@ -67,6 +69,7 @@ Commands (use COMMAND --help for flags):
   audit    Run Slither, bundle sources, optionally review with AI, save report
   review   AI-review an existing report
   discover Search source for flaws that Slither may miss
+  curate   Retain a prior finding against the exact audited source set
   risk     Execute a mapped Foundry exploit/fuzz/risk test plan in a local EVM
   risk-mocha Execute exact mapped Hardhat/Mocha attack tests in a local EVM
   suite    Record a trusted project's test command without mapping it to findings
