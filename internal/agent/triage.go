@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -134,12 +135,23 @@ func validateTriage(r Report, t Triage) error {
 	seen := map[string]bool{}
 	for _, d := range t.Decisions {
 		f, ok := findings[d.FindingID]
-		if !ok || seen[d.FindingID] || rank(f.Severity) < rank(t.MinSeverity) {
+		if seen[d.FindingID] || len(d.FindingID) != 64 || (ok && rank(f.Severity) < rank(t.MinSeverity)) {
 			return fmt.Errorf("unknown, duplicate, or out-of-scope triage finding %s", d.FindingID)
+		}
+		if _, err := hex.DecodeString(d.FindingID); err != nil {
+			return fmt.Errorf("invalid triage finding ID %s", d.FindingID)
 		}
 		seen[d.FindingID] = true
 		if (d.Disposition != "hold" && d.Disposition != "publish") || strings.TrimSpace(d.Owner) == "" || strings.TrimSpace(d.Reason) == "" {
 			return fmt.Errorf("finding %s requires hold/publish, owner, and reason", d.FindingID)
+		}
+		// AI discovery is nondeterministic. Preserve an explicit hold for a
+		// candidate absent from this run, but never approve an absent finding.
+		if !ok {
+			if d.Disposition != "hold" {
+				return fmt.Errorf("absent finding %s cannot be approved for publication", d.FindingID)
+			}
+			continue
 		}
 		if d.Disposition == "publish" && (!r.Reviewed || f.Review == nil || f.Review.Verdict != "likely-valid") {
 			return fmt.Errorf("finding %s cannot be published without a likely-valid AI review", d.FindingID)
