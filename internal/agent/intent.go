@@ -97,6 +97,8 @@ type AssuranceResult struct {
 	IntentSHA256 string                `json:"intent_sha256"`
 	PlanSHA256   string                `json:"plan_sha256,omitempty"`
 	ForgeVersion string                `json:"forge_version,omitempty"`
+	Runner string `json:"runner,omitempty"`
+	RunnerVersion string `json:"runner_version,omitempty"`
 	RiskProject  string                `json:"risk_project,omitempty"`
 	Assets       []IntentAsset         `json:"assets"`
 	Roles        []IntentRole          `json:"roles"`
@@ -212,6 +214,7 @@ func assessIntent(r Report, m IntentManifest, reportHash, intentHash string) (As
 	}
 	if r.Risk != nil {
 		result.PlanSHA256, result.ForgeVersion, result.RiskProject = r.Risk.PlanSHA256, r.Risk.ForgeVersion, r.Risk.Project
+		result.Runner, result.RunnerVersion = r.Risk.Runner, r.Risk.RunnerVersion
 		for _, e := range r.Risk.Evidence {
 			for _, id := range e.InvariantIDs {
 				if !known[id] {
@@ -244,10 +247,16 @@ func assessIntent(r Report, m IntentManifest, reportHash, intentHash string) (As
 				if r.Risk.Project == "" || (r.Risk.Project != "." && !safeSourcePath(r.Risk.Project)) {
 					return result, fmt.Errorf("risk project path missing for invariant test %s", e.Test)
 				}
-				if e.Status != "Success" && e.Status != "Failure" && e.Status != "Skipped" {
+				if e.Status != "Success" && e.Status != "Failure" && e.Status != "Skipped" && e.Status != "Error" {
 					return result, fmt.Errorf("invalid test status for %s", e.Test)
 				}
-				replay, err := replayCommand(e.Suite, e.Test)
+				var replay string
+				var err error
+				if r.Risk.Runner == "hardhat" {
+					replay = "./node_modules/.bin/hardhat test --network hardhat --grep " + shellQuote("^"+regexp.QuoteMeta(e.Test)+"$") + " " + shellQuote(e.Suite)
+				} else {
+					replay, err = replayCommand(e.Suite, e.Test)
+				}
 				if err != nil {
 					return result, err
 				}
@@ -333,7 +342,9 @@ func saveAssurance(dir string, result AssuranceResult) error {
 	var md strings.Builder
 	fmt.Fprintf(&md, "# Protocol assurance map\n\nScope: `%s` · Revision: `%s`\n\nIntent SHA-256: `%s` · Report SHA-256: `%s`\n\nLocal test outcomes describe only the recorded harness. A checked property is not a formal proof of all reachable states.\n\n", result.Scope, result.Revision, result.IntentSHA256, result.ReportSHA256)
 	if result.PlanSHA256 != "" {
-		fmt.Fprintf(&md, "Risk plan SHA-256: `%s` · Forge: `%s` · Project: `%s`\n\n", result.PlanSHA256, result.ForgeVersion, result.RiskProject)
+		runner, version := result.Runner, result.RunnerVersion
+		if runner == "" { runner, version = "foundry", result.ForgeVersion }
+		fmt.Fprintf(&md, "Risk plan SHA-256: `%s` · Runner: `%s` `%s` · Project: `%s`\n\n", result.PlanSHA256, runner, version, result.RiskProject)
 	}
 	for _, a := range result.Invariants {
 		fmt.Fprintf(&md, "## %s — %s\n\n%s\n\nSeverity: **%s** · Status: **%s**\n\nAssets: %s · Roles: %s · Assumptions: %s\n\nSources: %s\n\n", a.ID, a.Title, a.Statement, a.Severity, a.Status, strings.Join(a.Assets, ", "), strings.Join(a.Roles, ", "), strings.Join(a.Assumptions, ", "), strings.Join(a.Sources, ", "))

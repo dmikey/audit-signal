@@ -199,6 +199,17 @@ command arguments, since the command is saved in the report.
 
 The `risk` command adds an executed Foundry test stage before AI review. It runs your trusted project's exploit, fuzz and invariant tests in a local EVM, with an explicit [detector-to-test plan](examples/risk/plan.json). Tests are supplied by the project; the tool does not automatically generate attack contracts for arbitrary findings. [The example suite](examples/risk/test/VaultRisk.t.sol) reproduces a reentrancy drain, checks the remediation fixture, tests failed-transfer credit restoration, and runs 256 fuzz cases.
 
+For an existing Hardhat/Mocha project, `risk-mocha` executes each exact test title in a reviewed plan separately on the local Hardhat network. It requires exactly one passing test for each claim, hashes the test file and private output log, checks audited source hashes before and after execution, and records the runner separately from Foundry. Map by an exact `finding_id` to avoid attributing one property test to every occurrence of a detector. A case can instead map to `invariant_ids` and `subject_source` when a high-value attack path has no detector hit. This verifies that the trusted harness ran and passed; reviewers still need to inspect the assertions and threat model.
+
+```sh
+audit-signal risk-mocha --report reports/report.json --source-root . \
+  --project contracts --plan contracts/audit-signal-risk-plan.json --out reports
+audit-signal assure --report reports/report.json \
+  --intent contracts/audit-signal-intent.json --out reports
+```
+
+In the installable Action, set `suite-project: contracts` and `risk-mocha-plan: contracts/audit-signal-risk-plan.json`; `intent-file` then adds the invariant assurance map. Run this only on trusted project code. The Hardhat network is local, but a test harness can still attempt outbound requests; the runner strips credentials, not network access.
+
 ```sh
 ./bin/audit-signal audit --target . --scope owner/contracts --ai none
 ./bin/audit-signal risk --report reports/report.json --project . \
