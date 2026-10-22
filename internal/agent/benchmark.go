@@ -12,6 +12,8 @@ import (
 type BenchmarkCase struct {
 	Name      string `json:"name"`
 	Report    string `json:"report"`
+	Scope     string `json:"scope"`
+	Target    string `json:"target"`
 	Check     string `json:"check"`
 	Expected  string `json:"expected"`
 	RiskClaim string `json:"risk_claim,omitempty"`
@@ -36,6 +38,7 @@ func benchmarkCommand(args []string, w io.Writer) error {
 	f := flags("benchmark", w)
 	manifestPath := f.String("manifest", "examples/benchmark/manifest.json", "Labeled benchmark cases")
 	out := f.String("out", "reports/benchmark-score.json", "Machine-readable score")
+	expectedRevision := f.String("expected-revision", "", "Require every scan to match this Git commit")
 	if err := parse(f, args); err != nil {
 		return err
 	}
@@ -59,7 +62,7 @@ func benchmarkCommand(args []string, w io.Writer) error {
 	score := BenchmarkScore{Version: 1, Total: len(manifest.Cases), Results: []BenchmarkResult{}}
 	seen := map[string]bool{}
 	for _, c := range manifest.Cases {
-		if c.Name == "" || seen[c.Name] || c.Check == "" || (c.Expected != "present" && c.Expected != "absent") || c.Report == "" || filepath.IsAbs(c.Report) || !safeSourcePath(c.Report) {
+		if c.Name == "" || seen[c.Name] || c.Scope == "" || c.Target == "" || c.Check == "" || (c.Expected != "present" && c.Expected != "absent") || c.Report == "" || filepath.IsAbs(c.Report) || !safeSourcePath(c.Report) {
 			return fmt.Errorf("invalid benchmark case %q", c.Name)
 		}
 		seen[c.Name] = true
@@ -67,6 +70,9 @@ func benchmarkCommand(args []string, w io.Writer) error {
 		r, err := loadReport(path)
 		if err != nil {
 			return fmt.Errorf("benchmark case %s: %w", c.Name, err)
+		}
+		if r.Scope != c.Scope || filepath.Base(r.Target) != c.Target || (*expectedRevision != "" && r.Revision != *expectedRevision) {
+			return fmt.Errorf("benchmark case %s has stale or wrong scope, target, or revision", c.Name)
 		}
 		if r.Imported || len(r.Sources) == 0 || r.Coverage == nil || r.Coverage.Status != "complete" {
 			return fmt.Errorf("benchmark case %s requires a fresh complete Slither scan", c.Name)
