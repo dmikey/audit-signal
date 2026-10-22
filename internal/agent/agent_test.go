@@ -293,7 +293,7 @@ payload=json.loads(sys.stdin.read().split('UNTRUSTED AUDIT PAYLOAD:\n',1)[1])
 assert len(payload['findings']) <= 8
 assert payload['sources']['Vault.sol']['content'] == 'contract Vault {}'
 reviews=[{'id':f['id'],'verdict':'needs-review','reasoning':'source needs review','exploit_scenario':'requires an adversarial call','remediation':'review state change','validation':'run a regression test'} for f in payload['findings']]
-if %s and n == 2: reviews.pop()
+if %s and n >= 2: reviews.pop()
 print(json.dumps({'reviews':reviews}))
 `, fail)
 		if err := os.WriteFile(script, []byte(code), 0700); err != nil {
