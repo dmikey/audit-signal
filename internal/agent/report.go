@@ -397,6 +397,8 @@ func findingEvidenceLayers(r Report, f Finding) []EvidenceLayer {
 	layers := make([]EvidenceLayer, 0, 3)
 	if f.Origin == "ai-discovery" {
 		layers = append(layers, EvidenceLayer{Stage: "discovery", Tool: effectiveProvider(r.DiscoveryProvider), Model: r.DiscoveryModel, Status: "candidate", Check: f.Check})
+	} else if f.Origin == "curated-discovery" {
+		layers = append(layers, EvidenceLayer{Stage: "curation", Tool: "source-bound manifest", Status: "retained-candidate", Check: f.Check})
 	} else {
 		status := "detected"
 		version := ""

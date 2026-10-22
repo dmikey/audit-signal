@@ -169,7 +169,7 @@ func parseDiscoveries(scope string, sources map[string]Source, existing []Findin
 		}
 		overlaps := false
 		for _, prior := range existing {
-			if prior.Origin == "slither" && rank(prior.Severity) >= rank("Medium") {
+			if (prior.Origin == "slither" || prior.Origin == "curated-discovery") && rank(prior.Severity) >= rank("Medium") {
 				for _, loc := range prior.Locations {
 					if loc.File != c.File {
 						continue
