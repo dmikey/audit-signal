@@ -90,11 +90,16 @@ func publishCommand(ctx context.Context, args []string, w io.Writer) error {
 	cap := f.Int("max-issues", 20, "Maximum selected findings; excess fails before writing")
 	allowPublic := f.Bool("allow-public-destination", false, "Explicitly allow disclosure in a public repository")
 	allowUnreviewed := f.Bool("allow-unreviewed", false, "Explicitly publish Slither-only candidates")
+	triageFile := f.String("triage-file", "", "Require source-bound human triage decisions before publication")
+	allowUntriaged := f.Bool("allow-untriaged", false, "Explicitly bypass the human triage gate")
 	if err := parse(f, args); err != nil {
 		return err
 	}
 	if !repoPattern.MatchString(*repo) || !validSeverity(*min) || *cap < 1 || (*verdict != "likely-valid" && *verdict != "needs-review" && *verdict != "all") {
 		return fmt.Errorf("require --repo owner/repo, a valid --min-severity, valid --verdict and positive --max-issues")
+	}
+	if (*triageFile == "") == (!*allowUntriaged) {
+		return fmt.Errorf("provide --triage-file or explicitly --allow-untriaged")
 	}
 	r, err := loadReport(*report)
 	if err != nil {
@@ -109,6 +114,26 @@ func publishCommand(ctx context.Context, args []string, w io.Writer) error {
 	selected, err := selectFindings(r, *min, *findingID, *verdict)
 	if err != nil {
 		return err
+	}
+	if *triageFile != "" {
+		t, err := loadTriage(*triageFile)
+		if err != nil {
+			return err
+		}
+		if err := validateTriage(r, t); err != nil {
+			return err
+		}
+		allowed := map[string]bool{}
+		for _, d := range t.Decisions {
+			allowed[d.FindingID] = d.Disposition == "publish"
+		}
+		approved := selected[:0]
+		for _, finding := range selected {
+			if allowed[finding.ID] {
+				approved = append(approved, finding)
+			}
+		}
+		selected = approved
 	}
 	if len(selected) > *cap {
 		return fmt.Errorf("%d findings exceed --max-issues %d; no issues written", len(selected), *cap)

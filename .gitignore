@@ -6,3 +6,4 @@
 *.test
 /examples/risk/out/
 /examples/risk/cache/
+/examples/benchmark/out/

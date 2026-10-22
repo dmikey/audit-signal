@@ -32,9 +32,12 @@ For local use, run `gh auth login` with a GitHub account that has Copilot access
   --scope playmos/contracts \
   --solc-version 0.8.28 --model auto
 
-# Review reports/report.md, then publish in the private contract repository:
+# Review reports/report.md, record human decisions, then publish privately:
+./bin/audit-signal triage init --report reports/report.json --file triage.json
+# Fill each pending decision with hold/publish, owner, and reason.
+./bin/audit-signal triage check --report reports/report.json --file triage.json
 ./bin/audit-signal publish \
-  --report reports/report.json --repo owner/private-contracts
+  --report reports/report.json --repo owner/private-contracts --triage-file triage.json
 ```
 
 Use the project root as `--target` when compilation depends on Foundry/Hardhat configuration. Install project dependencies first; use `slither.config.json` for Slither/framework settings. Use `--venv` or `--slither` for external tool installations. Scope is required and should remain stable across machines and revisions.
@@ -57,7 +60,9 @@ To search for flaws beyond Slither's detectors, run `discover` after the static 
 ./bin/audit-signal discover --report reports/report.json --model auto
 ./bin/audit-signal risk --report reports/report.json --project . --source-root . --plan risk-plan.json
 ./bin/audit-signal review --report reports/report.json --model auto
-./bin/audit-signal publish --report reports/report.json --repo owner/private-contracts
+./bin/audit-signal triage init --report reports/report.json --file triage.json
+# Fill and check the human decisions before publication.
+./bin/audit-signal publish --report reports/report.json --repo owner/private-contracts --triage-file triage.json
 ```
 
 AI review consumes a bounded source bundle (48 KB by default). It excludes vendor/build directories (`node_modules`, `lib`, `out`, `cache`, `artifacts`) and ignores symlinks. An oversized bundle fails explicitly; narrow the target or raise `--max-source-bytes`. Reviews run in batches of up to eight findings, with the full bounded source bundle sent to the selected provider for each batch. Each serialized batch is capped at 256 KB; larger source bundles still need a narrower target. Every finding must receive exactly one valid review before the report is marked reviewed. Invalid, incomplete or failed AI output leaves the original Slither report available and prevents normal publication. Multiple batches consume more provider requests and may repeat private source in those requests.
@@ -136,6 +141,7 @@ jobs:
       model: auto
       # discover: true (default; searches source for additional candidates)
       publish: true
+      triage-file: .audit-signal/triage.json
       # Optional Foundry exploit / fuzz / invariant test stage:
       # risk-project: .
       # risk-plan: risk-plan.json
@@ -215,7 +221,8 @@ In the installable Action, set `suite-project: contracts` and `risk-mocha-plan: 
 ./bin/audit-signal risk --report reports/report.json --project . \
   --source-root . --plan risk-plan.json --solc /path/to/installed/solc
 ./bin/audit-signal review --report reports/report.json
-./bin/audit-signal publish --report reports/report.json --repo owner/private-contracts
+./bin/audit-signal triage check --report reports/report.json --file triage.json
+./bin/audit-signal publish --report reports/report.json --repo owner/private-contracts --triage-file triage.json
 ```
 
 Use Foundry v1.8.5 or a version supporting `forge test --json-file`. Compilation is offline, so install the correct solc beforehand or pass `--solc`. Source hashes must match the Slither snapshot; changed source requires a new audit. The plan specifies an exact suite/test signature, either a detector `check` or source `file` and `line`, a descriptive claim (`exploit-reproduced`, `mitigation-holds`, or `risk-property`) and description. Detector mappings associate evidence with every finding of that type; source-location mappings target one fault site. Claims describe the intended assertions, and a successful test means those assertions passed. It does not automatically establish the security of every mapped finding.
@@ -275,7 +282,11 @@ The tool writes `report.json`, `report.md`, and `slither.log`. JSON contains sou
 
 Use `audit-signal render --report path/to/report.json` to add the layer view to an existing report without running Slither, Copilot or Foundry again. It rewrites `report.json` and `report.md` beside the input unless `--out` selects another directory.
 
-`publish` defaults to Medium and High findings with a `likely-valid` AI verdict, at most 20 selected findings. `--min-severity Low` includes Low findings; `--verdict needs-review` or `--verdict all` changes review filtering; `--finding-id` selects one exact candidate; `--max-issues` changes the cap. Exceeding the cap fails before issue writes. Normal publication requires a complete AI review; `--allow-unreviewed` explicitly permits static-only candidates. Public destinations are blocked unless `--allow-public-destination` is supplied.
+`triage init` creates a versioned decision file for every finding at or above its minimum severity. A human fills each `pending` record with `hold` or `publish`, an owner, and a reason. `triage check` rejects missing or duplicate decisions, stale scope or source hashes, and publication decisions without a `likely-valid` AI review. A new source set requires fresh decisions. The [Playmos pilot](https://github.com/playmos-labs/playmos-sdk/pull/955) records eight Medium holds and no approved vulnerability publication.
+
+`publish` requires `--triage-file` by default and only selects findings marked `publish`. `--allow-untriaged` is an explicit compatibility override; the reusable workflow does not use it. Publication otherwise defaults to Medium and High findings with a `likely-valid` AI verdict, at most 20 selected findings. `--min-severity Low` includes Low findings; `--verdict needs-review` or `--verdict all` changes review filtering; `--finding-id` selects one exact candidate; `--max-issues` changes the cap. Exceeding the cap fails before issue writes. Normal publication requires a complete AI review; `--allow-unreviewed` explicitly permits static-only candidates. Public destinations are blocked unless `--allow-public-destination` is supplied.
+
+`benchmark` scores labeled fixture scans and fails CI on a regression. The first [manifest](examples/benchmark/manifest.json) checks that fresh Slither runs detect `reentrancy-eth` in the vulnerable vault and omit it in the repaired vault. CI produces a machine-readable score from those two cases; this is a narrow regression signal, not a general recall or false-positive rate. Add new vulnerable/repaired pairs and reviewed labels to grow the benchmark.
 
 Issues receive `security`, `audit-signal`, and `severity:*` labels. Each includes detector evidence, source locations, revision metadata and AI assessment. A deterministic fingerprint prevents duplicates for the same scope, detector, locations and evidence; source/line changes may create a new candidate. Open issues are updated when evidence changes; closed issues are left closed. Human labels are preserved. `publication.json` records created/updated/unchanged issue URLs. Run publishers serially per scope; the reusable workflow supplies concurrency control. Publication uses ordinary GitHub Issues, not Security Advisories or code-scanning alerts.
 

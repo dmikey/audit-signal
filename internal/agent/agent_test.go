@@ -184,7 +184,7 @@ func TestPublishLimitBeforeCredentials(t *testing.T) {
 	if err := saveReport(dir, r); err != nil {
 		t.Fatal(err)
 	}
-	err := Run(context.Background(), []string{"publish", "--report", filepath.Join(dir, "report.json"), "--repo", "org/contracts", "--max-issues", "1", "--allow-unreviewed"}, &strings.Builder{})
+	err := Run(context.Background(), []string{"publish", "--report", filepath.Join(dir, "report.json"), "--repo", "org/contracts", "--max-issues", "1", "--allow-unreviewed", "--allow-untriaged"}, &strings.Builder{})
 	if err == nil || !strings.Contains(err.Error(), "exceed") {
 		t.Fatalf("limit failed: %v", err)
 	}

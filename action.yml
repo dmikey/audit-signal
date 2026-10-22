@@ -46,6 +46,9 @@ inputs:
   intent-file:
     description: Optional reviewed protocol intent JSON for invariant assurance
     default: ''
+  triage-file:
+    description: Optional source-bound human decision file to validate after AI review
+    default: ''
   suite-project:
     description: Trusted test project path within the caller checkout
     default: '.'
@@ -103,6 +106,7 @@ runs:
         POLICY_FILE: ${{ inputs.policy-file }}
         BASELINE_FILE: ${{ inputs.baseline-file }}
         INTENT_FILE: ${{ inputs.intent-file }}
+        TRIAGE_FILE: ${{ inputs.triage-file }}
       run: |
         set -euo pipefail
         if [[ "$RUNNER_OS" != Linux && "$RUNNER_OS" != macOS ]]; then
@@ -228,6 +232,13 @@ runs:
       run: |
         "$AUDIT_SIGNAL_BIN" review --report "$AUDIT_SIGNAL_REPORT/report.json" \
           --out "$AUDIT_SIGNAL_REPORT" --provider "$PROVIDER" --model "$MODEL"
+    - name: Validate human triage decisions
+      if: inputs.triage-file != ''
+      shell: bash
+      env:
+        TRIAGE_FILE: ${{ inputs.triage-file }}
+      run: |
+        "$AUDIT_SIGNAL_BIN" triage check --report "$AUDIT_SIGNAL_REPORT/report.json" --file "$TRIAGE_FILE"
     - name: Apply caller policy gate
       if: inputs.policy-file != ''
       shell: bash

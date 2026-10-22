@@ -51,6 +51,10 @@ on:
       min-severity:
         type: string
         default: Medium
+      triage-file:
+        description: Source-bound human decisions in the caller repository; required when publish is true
+        type: string
+        default: ''
       policy-file:
         description: Optional policy JSON path in the caller repository; enables a merge gate
         type: string
@@ -258,6 +262,10 @@ jobs:
           repository: dmikey/audit-signal
           ref: ${{ inputs.agent-ref }}
           persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          path: contracts-repo
       - uses: actions/setup-go@v6
         with:
           go-version: '1.24.x'
@@ -272,7 +280,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           MIN_SEVERITY: ${{ inputs.min-severity }}
-        run: ./bin/audit-signal publish --report reviewed-report/report.json --repo "$REPO" --min-severity "$MIN_SEVERITY"
+          TRIAGE_FILE: ${{ inputs.triage-file }}
+        run: |
+          if [ -z "$TRIAGE_FILE" ]; then echo 'publish requires triage-file.' >&2; exit 1; fi
+          ./bin/audit-signal triage check --report reviewed-report/report.json --file "contracts-repo/$TRIAGE_FILE"
+          ./bin/audit-signal publish --report reviewed-report/report.json --repo "$REPO" --min-severity "$MIN_SEVERITY" --triage-file "contracts-repo/$TRIAGE_FILE"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
