@@ -308,18 +308,18 @@ func loadReport(path string) (Report, error) {
 			return r, fmt.Errorf("invalid finding ID")
 		}
 		seen[f.ID] = true
-		if f.Origin == "ai-discovery" {
-			if !r.Discovered || r.DiscoveryModel == "" || f.Discovery == nil || strings.TrimSpace(f.Discovery.SourceExcerpt) == "" || len(f.Locations) != 1 || len(f.Locations[0].Lines) != 1 {
-				return r, fmt.Errorf("incomplete AI discovery evidence")
+		if f.Origin == "ai-discovery" || f.Origin == "curated-discovery" {
+			if (f.Origin == "ai-discovery" && (!r.Discovered || r.DiscoveryModel == "")) || f.Discovery == nil || strings.TrimSpace(f.Discovery.SourceExcerpt) == "" || len(f.Locations) != 1 || len(f.Locations[0].Lines) != 1 {
+				return r, fmt.Errorf("incomplete source-level discovery evidence")
 			}
 			loc := f.Locations[0]
 			src, ok := r.Sources[loc.File]
 			if !ok || loc.Lines[0] < 1 {
-				return r, fmt.Errorf("AI discovery source missing")
+				return r, fmt.Errorf("source-level discovery source missing")
 			}
 			lines := strings.Split(src.Content, "\n")
-			if loc.Lines[0] > len(lines) || strings.TrimSpace(lines[loc.Lines[0]-1]) != f.Discovery.SourceExcerpt {
-				return r, fmt.Errorf("AI discovery source mismatch")
+			if loc.Lines[0] > len(lines) || strings.TrimSpace(lines[loc.Lines[0]-1]) != f.Discovery.SourceExcerpt || f.ID != digest(r.Scope+"\x00"+f.Check+"\x00"+loc.File+"\x00"+fmt.Sprint(loc.Lines[0])+"\x00"+f.Discovery.SourceExcerpt) {
+				return r, fmt.Errorf("source-level discovery source or ID mismatch")
 			}
 		}
 	}
@@ -481,14 +481,32 @@ func evidenceLayersMarkdown(r Report, f Finding) string {
 
 func issueBody(r Report, f Finding) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "<!-- audit-signal:%s -->\n## %s\n\n**Severity:** %s · **Confidence:** %s · **Origin:** %s\n\n**Scope:** `%s` · **Revision:** `%s` · **Dirty:** %t · **Imported:** %t\n\n**Status:** automated candidate; requires human validation.\n\n", f.ID, f.Check, f.Severity, f.Confidence, f.Origin, r.Scope, r.Revision, r.Dirty, r.Imported)
+	status := "automated candidate; requires human validation"
+	if r.Risk != nil && r.Risk.Status == "passed" {
+		for _, e := range r.Risk.Evidence {
+			if e.Status == "Success" && e.Claim == "exploit-reproduced" {
+				for _, id := range e.FindingIDs {
+					if id == f.ID {
+						status = "local exploit behavior reproduced; deployment impact requires validation"
+					}
+				}
+			}
+		}
+	}
+	fmt.Fprintf(&b, "<!-- audit-signal:%s -->\n## %s\n\n**Severity:** %s · **Confidence:** %s · **Origin:** %s\n\n**Scope:** `%s` · **Revision:** `%s` · **Dirty:** %t · **Imported:** %t\n\n**Status:** %s.\n\n", f.ID, f.Check, f.Severity, f.Confidence, f.Origin, r.Scope, r.Revision, r.Dirty, r.Imported, status)
 	b.WriteString(evidenceLayersMarkdown(r, f))
 	fmt.Fprintf(&b, "### Source evidence\n\n%s\n\n", f.Description)
 	for _, l := range f.Locations {
 		fmt.Fprintf(&b, "- `%s` lines %v\n", l.File, l.Lines)
 	}
 	if f.Discovery != nil {
-		fmt.Fprintf(&b, "\nSource line: `%s`\n\n**Discovery model:** `%s`\n\n**Hypothesized attack:** %s\n\n**Proposed fix:** %s\n\n**Validation needed:** %s\n", f.Discovery.SourceExcerpt, r.DiscoveryModel, f.Discovery.ExploitScenario, f.Discovery.Remediation, f.Discovery.Validation)
+		fmt.Fprintf(&b, "\nSource line: `%s`\n", f.Discovery.SourceExcerpt)
+		if f.Origin == "curated-discovery" {
+			b.WriteString("\n**Candidate provenance:** Retained from a source-bound manifest; not attributed to this run's discovery model.\n")
+		} else {
+			fmt.Fprintf(&b, "\n**Discovery model:** `%s`\n", r.DiscoveryModel)
+		}
+		fmt.Fprintf(&b, "\n**Hypothesized attack:** %s\n\n**Proposed fix:** %s\n\n**Validation needed:** %s\n", f.Discovery.ExploitScenario, f.Discovery.Remediation, f.Discovery.Validation)
 	}
 	if f.Review != nil {
 		fmt.Fprintf(&b, "\n### AI review\n\nModel: `%s` · Verdict: **%s**\n\n%s\n\n### Exploit scenario\n\n%s\n\n### Remediation\n\n%s\n\n### Validation to perform\n\n%s\n", r.Model, f.Review.Verdict, f.Review.Reasoning, f.Review.ExploitScenario, f.Review.Remediation, f.Review.Validation)

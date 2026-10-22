@@ -12,7 +12,7 @@ import (
 func TestEvidenceLayersSeparateDetectionReviewAndExecutedTest(t *testing.T) {
 	source := "uint256 missed = epoch - lastClaimEpoch[msg.sender];\n"
 	static := Finding{ID: digest("static"), Check: "low-level-calls", Severity: "Informational", Confidence: "High", Description: "external call", Origin: "slither"}
-	proposal := Finding{ID: digest("discovery"), Check: "ai-claim-checkpoint", Severity: "High", Confidence: "AI hypothesis", Description: "repeated claim", Origin: "ai-discovery", Locations: []Location{{File: "Pool.sol", Lines: []int{1}}}, Discovery: &DiscoveryEvidence{SourceExcerpt: strings.TrimSpace(source), ExploitScenario: "fresh callers", Remediation: "key by beneficiary", Validation: "repeat claim"}}
+	proposal := Finding{ID: digest("example/pool\x00ai-claim-checkpoint\x00Pool.sol\x001\x00" + strings.TrimSpace(source)), Check: "ai-claim-checkpoint", Severity: "High", Confidence: "AI hypothesis", Description: "repeated claim", Origin: "ai-discovery", Locations: []Location{{File: "Pool.sol", Lines: []int{1}}}, Discovery: &DiscoveryEvidence{SourceExcerpt: strings.TrimSpace(source), ExploitScenario: "fresh callers", Remediation: "key by beneficiary", Validation: "repeat claim"}}
 	for _, f := range []*Finding{&static, &proposal} {
 		f.Review = &Review{ID: f.ID, Verdict: "likely-valid", Reasoning: "source evidence", ExploitScenario: "repeat claim", Remediation: "fix", Validation: "test"}
 	}
